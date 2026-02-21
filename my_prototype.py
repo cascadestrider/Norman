@@ -8,10 +8,27 @@ import random
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-def get_ai_recommendation(title, text_snippet):
-    print("🧠 Consulting the AI Brain...")
-    # We send a snippet of the actual text now for better accuracy
-    prompt = f"Target Page: {title}\nContent Snippet: {text_snippet[:500]}\n\nTask: Based on this content, recommend 1 specific product and 1 catchy ad headline. Format: 'Product: [Name] | Headline: [Text]'"
+def get_ai_recommendation(title, content_snippet):
+    print("🎯 AI is analyzing the conversation for friction points...")
+    
+    # Define our specific product strengths
+    product_focus = "Tactical/Sport sunglasses with Zero-Glare polarization, Ballistic protection, and Anti-fog tech."
+    
+    prompt = f"""
+    The following content is from a webpage titled: {title}
+    
+    Content: {content_snippet[:1500]}
+    
+    TASK:
+    1. Identify a specific problem (friction point) mentioned regarding vision, glare, eye protection, or gear failure.
+    2. Create a 'High-Conversion' ad strategy for our product: {product_focus}.
+    3. The ad headline must directly address the user's struggle.
+    
+    Format your response as:
+    PROBLEM DETECTED: [Briefly describe]
+    WHY OUR PRODUCT WINS: [Specific feature match]
+    AD HEADLINE: [Catchy, solution-oriented text]
+    """
     
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -19,50 +36,40 @@ def get_ai_recommendation(title, text_snippet):
     )
     return response.choices[0].message.content
 
-def stealth_scout():
-    # Loop so you can test multiple sites in one go
+def intent_scout():
     while True:
-        url = input("\n🌐 Enter a URL to scout (or type 'exit'): ")
+        url = input("\n🌐 Enter a Forum/Article URL to analyze (or 'exit'): ")
         if url.lower() == 'exit': break
         
-        # --- STEALTH ARMOR ---
-        # We rotate "User Agents" so we look like different devices
-        user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1'
-        ]
-        
-        headers = {'User-Agent': random.choice(user_agents),
-            'Referer': 'https://www.google.com/',  # Tell the site you came from Google
-            'Accept-Language': 'en-US,en;q=0.9',}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Referer': 'https://www.google.com/'
+        }
         
         try:
-            print(f"📡 Launching Stealth Scout to: {url}...")
+            print(f"📡 Scouting for high-intent leads at: {url}...")
             response = requests.get(url, headers=headers, timeout=10)
-            
-            if response.status_code != 200:
-                print(f"❌ Site blocked the scout (Error {response.status_code})")
-                continue
-
             soup = BeautifulSoup(response.text, 'html.parser')
-            title = soup.title.string if soup.title else "Untitled Page"
             
-            # Extract clean text from the page
-            page_text = ' '.join([p.text for p in soup.find_all('p')])
-            
-            if len(page_text) < 50:
-                print("⚠️ Not enough content found to analyze.")
-                continue
+            # Focus specifically on paragraph and forum post text
+            page_text = ' '.join([p.text for p in soup.find_all(['p', 'div', 'span']) if len(p.text) > 30])
+            title = soup.title.string if soup.title else "Discussion Page"
 
-            print(f"✅ Connection Established: {title}")
+            # Keywords that signal a problem
+            friction_keywords = ["glare", "blinded", "fog", "scratch", "distortion", "green", "ballistic", "eye"]
             
-            recommendation = get_ai_recommendation(title, page_text)
-            print(f"\n--- AI AD STRATEGY ---\n{recommendation}\n----------------------")
+            # Simple check to see if it's worth sending to AI
+            found_keywords = [word for word in friction_keywords if word in page_text.lower()]
+            
+            if found_keywords:
+                print(f"✅ Potential Lead Found! (Keywords: {found_keywords})")
+                recommendation = get_ai_recommendation(title, page_text)
+                print(f"\n--- CONVERSION STRATEGY ---\n{recommendation}\n--------------------------")
+            else:
+                print("⚖️ No significant vision friction detected on this page.")
 
         except Exception as e:
-            print(f"❌ Connection Failed: {e}")
+            print(f"❌ Scout failed: {e}")
 
-# Run the tool
 if __name__ == "__main__":
-    stealth_scout()
+    intent_scout()
