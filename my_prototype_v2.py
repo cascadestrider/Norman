@@ -75,6 +75,11 @@ def init_db():
             date_found TEXT
         )
     """)
+    # Migrate existing databases that pre-date the source column
+    try:
+        conn.execute("ALTER TABLE leads ADD COLUMN source TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     conn.commit()
     return conn
 
@@ -336,4 +341,3 @@ if __name__ == "__main__":
         scheduler = BlockingScheduler()
         scheduler.add_job(daily_run, "cron", hour=9, minute=0)
         scheduler.start()
-EOF
