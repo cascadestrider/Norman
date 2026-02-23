@@ -35,7 +35,7 @@ KEYWORDS = {
 }
 
 SEED_QUERIES = [
-    "sunglasses fog up site:reddit.com",
+    "sunglasses fog up reddit",
     "blinded by glare outdoor forum",
     "ballistic eyewear recommendation",
     "best anti-glare tactical sunglasses review",
