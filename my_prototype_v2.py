@@ -169,16 +169,14 @@ def daily_run():
     print("✅ Scout run complete.")
 
 # --- MAIN ---
-if __name__ == "__main__":
-    print("🕐 AI Ad Scout — runs daily at 6am")
-    print("💡 Tip: Press Ctrl+C to stop\n")
-    daily_run()  # run immediately on start
-    scheduler = BlockingScheduler()
-    scheduler.add_job(daily_run, "cron", hour=6, minute=0)
-    scheduler.start()
-
-# Support --once flag for GitHub Actions (run once, no scheduler)
 import sys
-if __name__ == "__main__" and "--once" in sys.argv:
-    daily_run()
-    sys.exit(0)
+if __name__ == "__main__":
+    if "--once" in sys.argv:
+        daily_run()
+        sys.exit(0)
+    else:
+        print("AI Ad Scout - runs daily at 6am")
+        daily_run()
+        scheduler = BlockingScheduler()
+        scheduler.add_job(daily_run, "cron", hour=6, minute=0)
+        scheduler.start()
