@@ -41,6 +41,31 @@ SEED_QUERIES = [
     "best anti-glare tactical sunglasses review",
     "eye strain driving bright sun forum",
     "shooting glasses fogging up problem",
+    # driving & glare
+    "best sunglasses for driving glare reduction review",
+    "driving into sun glare eye strain forum",
+    # cycling & eye protection
+    "cycling sunglasses wind dust eye protection review",
+    "best glasses for cycling outdoor forum",
+    # fishing & polarized
+    "polarized sunglasses fishing glare water review",
+    # hiking & sun protection
+    "hiking sunglasses uv sun protection recommendation",
+    # law enforcement
+    "law enforcement tactical eyewear recommendation forum",
+    # construction safety
+    "construction safety glasses anti-fog review",
+    # motorcycle
+    "motorcycle riding sunglasses wind glare protection",
+    "best sunglasses for motorcycle riding forum",
+]
+
+BING_SEED_QUERIES = [
+    "best driving sunglasses glare reduction review",
+    "cycling eye protection wind dust polarized",
+    "polarized fishing sunglasses water glare comparison",
+    "construction safety glasses fog resistant anti-scratch",
+    "motorcycle riding sunglasses UV wind protection review",
 ]
 
 REDDIT_SUBREDDITS = [
@@ -125,7 +150,7 @@ def discover_urls_google():
 # --- BING URL DISCOVERY ---
 def discover_urls_bing():
     urls = []
-    for query in SEED_QUERIES:
+    for query in BING_SEED_QUERIES:
         try:
             search = GoogleSearch({
                 "q": query,
