@@ -122,6 +122,24 @@ def discover_urls_google():
             print(f"❌ Google search failed for '{query}': {e}")
     return list(set(urls))
 
+# --- BING URL DISCOVERY ---
+def discover_urls_bing():
+    urls = []
+    for query in SEED_QUERIES:
+        try:
+            search = GoogleSearch({
+                "q": query,
+                "api_key": os.getenv("SERP_API_KEY"),
+                "engine": "bing",
+                "count": 5
+            })
+            results = search.get_dict()
+            for r in results.get("organic_results", []):
+                urls.append(r["link"])
+        except Exception as e:
+            print(f"❌ Bing search failed for '{query}': {e}")
+    return list(set(urls))
+
 # --- REDDIT DISCOVERY ---
 def discover_urls_reddit():
     urls = []
@@ -292,6 +310,28 @@ def daily_run():
                 strategy = get_ai_recommendation(title, text, "web")
                 save_lead(conn, url, title, score, found_kws, strategy, "google")
                 results.append((score, url, title, strategy, "google"))
+                print(f"✅ Lead saved!")
+        except Exception as e:
+            print(f"❌ Failed on {url[:60]}: {e}")
+
+    # --- BING ---
+    bing_urls = discover_urls_bing()
+    print(f"🔍 Bing found {len(bing_urls)} candidate URLs")
+    for url in bing_urls:
+        if already_visited(conn, url):
+            print(f"⏭️  Already visited: {url[:60]}")
+            continue
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            soup = BeautifulSoup(r.text, "html.parser")
+            text = " ".join(p.text for p in soup.find_all(["p", "div"]) if len(p.text) > 30)
+            title = soup.title.string if soup.title else "Unknown"
+            found_kws, score = score_page(text)
+            print(f"📄 [Bing] Score {score}: {title[:50]}")
+            if score >= 20:
+                strategy = get_ai_recommendation(title, text, "web")
+                save_lead(conn, url, title, score, found_kws, strategy, "bing")
+                results.append((score, url, title, strategy, "bing"))
                 print(f"✅ Lead saved!")
         except Exception as e:
             print(f"❌ Failed on {url[:60]}: {e}")
