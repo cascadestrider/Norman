@@ -316,19 +316,22 @@ def get_ai_recommendation(title, content_snippet, source="web"):
 
 # --- REPORT ---
 def generate_report(results):
-    if not results:
-        print("📭 No leads found today.")
-        return
     os.makedirs("reports", exist_ok=True)
     filename = f"reports/{date.today()}.md"
     with open(filename, "w") as f:
         f.write(f"# AI Ad Scout Report — {date.today()}\n\n")
-        f.write(f"**Total leads found:** {len(results)}\n\n---\n\n")
-        for score, url, title, strategy, source in sorted(results, reverse=True):
-            f.write(f"## [{title}]({url})\n")
-            f.write(f"**Source:** {source.upper()}  |  **Score:** {score}/100\n\n")
-            f.write(f"{strategy}\n\n---\n\n")
+        if not results:
+            f.write("**Status:** Scout ran successfully — no new leads found today.\n\n")
+            f.write("All discovered URLs were either previously visited or scored below threshold.\n")
+        else:
+            f.write(f"**Total leads found:** {len(results)}\n\n---\n\n")
+            for score, url, title, strategy, source in sorted(results, reverse=True):
+                f.write(f"## [{title}]({url})\n")
+                f.write(f"**Source:** {source.upper()}  |  **Score:** {score}/100\n\n")
+                f.write(f"{strategy}\n\n---\n\n")
     print(f"📊 Report saved to {filename}")
+    if not results:
+        print("📭 No new leads found today.")
 
 # --- DAILY RUNNER ---
 def daily_run():
