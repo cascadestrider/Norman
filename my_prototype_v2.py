@@ -39,10 +39,8 @@ def is_excluded(url):
 
 KEYWORDS = {
     "blinded by glare": 10, "can't see in sun": 10,
-    "fog up": 9, "glasses fog": 9, "fogging up": 9,
     "eye strain": 8, "ansi z87": 8, "headache sun": 8,
-    "ballistic": 7, "anti-fog": 7, "tactical eyewear": 7,
-    "glare": 6, "polarized": 5, "scratch": 5,
+    "glare": 6, "polarized": 5,
     "distortion": 5, "blinded": 6, "sun glare": 7,
     "can't see": 6, "eye protection": 6, "shooting glasses": 7,
     "uv protection": 5, "lens quality": 4, "wrap around": 4,
@@ -52,49 +50,38 @@ KEYWORDS = {
 SEED_QUERIES = [
     "sunglasses fog up reddit",
     "blinded by glare outdoor forum",
-    "ballistic eyewear recommendation",
-    "best anti-glare tactical sunglasses review",
+    "best anti-glare sunglasses review",
     "eye strain driving bright sun forum",
-    "shooting glasses fogging up problem",
     # driving & glare
     "best sunglasses for driving glare reduction review",
     "driving into sun glare eye strain forum",
     "best driving sunglasses glare reduction review",
     # cycling & eye protection
-    "cycling sunglasses wind dust eye protection review",
     "best glasses for cycling outdoor forum",
-    "cycling eye protection wind dust polarized",
+    "cycling eye protection polarized",
     # fishing & polarized
     "polarized sunglasses fishing glare water review",
     "polarized fishing sunglasses water glare comparison",
     # hiking & sun protection
     "hiking sunglasses uv sun protection recommendation",
-    # law enforcement
-    "law enforcement tactical eyewear recommendation forum",
-    # construction safety
-    "construction safety glasses anti-fog review",
-    "construction safety glasses fog resistant anti-scratch",
     # motorcycle
-    "motorcycle riding sunglasses wind glare protection",
+    "motorcycle riding sunglasses glare protection",
     "best sunglasses for motorcycle riding forum",
-    "motorcycle riding sunglasses UV wind protection review",
+    "motorcycle riding sunglasses UV protection review",
 ]
 
 REDDIT_SUBREDDITS = [
-    "guns", "tacticalgear", "hunting", "fishing",
-    "cycling", "hiking", "ultralight", "Gunfighting",
-    "militarygear", "Firearms"
+    "hunting", "fishing",
 ]
 
 REDDIT_SEARCH_TERMS = [
-    "sunglasses glare", "glasses fog", "eye strain",
-    "shooting glasses", "ballistic eyewear", "polarized sunglasses"
+    "sunglasses glare", "eye strain",
+    "shooting glasses", "polarized sunglasses"
 ]
 
 YOUTUBE_SEARCH_TERMS = [
-    "shooting glasses review", "tactical sunglasses review",
-    "best polarized sunglasses outdoor", "anti fog shooting glasses",
-    "ballistic eyewear test"
+    "shooting glasses review",
+    "best polarized sunglasses outdoor",
 ]
 
 # --- DATABASE ---
