@@ -10,3 +10,12 @@ reports/
 venv/
 venv/
 .github/
+
+# SQLite databases
+*.db
+*.db.backup
+*_frozen.db
+
+# Python cache
+__pycache__/
+*.pyc
