@@ -6,3 +6,6 @@ api/.env
 models
 client/node_modules
 .env
+reports/
+venv/
+venv/
