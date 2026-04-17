@@ -7,10 +7,14 @@ load_dotenv()
 SERP_API_KEY = os.getenv("SERP_API_KEY", "")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("NORMAN_ANTHROPIC_KEY", "")
+VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "")
 X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN", "")
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
 TIKTOK_ACCESS_TOKEN = os.getenv("TIKTOK_ACCESS_TOKEN", "")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+
+# --- Semantic scoring toggle (A/B vs keyword scoring) ---
+USE_SEMANTIC_SCORING = os.getenv("USE_SEMANTIC_SCORING", "0") == "1"
 
 # --- Scoring ---
 SCORE_THRESHOLD = 30

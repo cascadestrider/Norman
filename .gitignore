@@ -19,3 +19,13 @@ venv/
 # Python cache
 __pycache__/
 *.pyc
+*.pre-p1
+.claude/
+norman/.claude/
+
+# Claude Code worktrees and artifacts
+.claude/
+**/.claude/
+
+# Pre-merge backups
+*.pre-p1

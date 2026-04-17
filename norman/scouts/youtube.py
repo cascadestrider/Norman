@@ -1,7 +1,7 @@
 import requests
 from norman.scouts.base import BaseScout
 from norman.models import Lead, ScoutResult
-from norman.scoring import score_text
+from norman.scoring_v2 import score_lead
 from norman.config import YOUTUBE_API_KEY, YOUTUBE_QUERIES, SCORE_THRESHOLD
 
 
@@ -34,7 +34,7 @@ class YouTubeScout(BaseScout):
 
                     comment_text = self._fetch_comments(video_id, errors)
                     full_text = f"{title} {description} {comment_text}"
-                    found_kws, score = score_text(full_text)
+                    found_kws, score = score_lead(full_text)
 
                     if score >= SCORE_THRESHOLD:
                         leads.append(Lead(

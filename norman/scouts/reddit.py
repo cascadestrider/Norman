@@ -2,7 +2,7 @@ import time
 import requests
 from norman.scouts.base import BaseScout
 from norman.models import Lead, ScoutResult
-from norman.scoring import score_text
+from norman.scoring_v2 import score_lead
 from norman.config import (
     REDDIT_HEADERS,
     REDDIT_SUBREDDITS,
@@ -78,7 +78,7 @@ class RedditScout(BaseScout):
                     comments.append(c["body"])
 
             full_text = f"{title} {body} " + " ".join(comments)
-            found_kws, score = score_text(full_text)
+            found_kws, score = score_lead(full_text)
 
             return Lead(
                 url=url,

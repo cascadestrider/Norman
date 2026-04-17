@@ -2,7 +2,8 @@ from serpapi import GoogleSearch
 from norman.scouts.base import BaseScout
 from norman.models import Lead, ScoutResult
 from norman.scoring import score_text
-from norman.config import SERP_API_KEY, SCORE_THRESHOLD
+from norman.scoring_v2 import score_lead
+from norman.config import SERP_API_KEY, SCORE_THRESHOLD, USE_SEMANTIC_SCORING
 
 # Competitor-focused queries first (highest value) — buyers who already
 # purchased and were disappointed are the exact ad target.
@@ -31,7 +32,16 @@ AMAZON_EXTRA_KEYWORDS = {
 
 
 def _score_amazon_text(text: str) -> tuple[list[str], int]:
-    """Score using shared keywords + Amazon-specific complaint keywords."""
+    """Score using shared keywords + Amazon-specific complaint keywords.
+
+    When USE_SEMANTIC_SCORING is on, defer to score_lead — the extra
+    Amazon keywords (fogging/scratched/disappointed) are already covered
+    by the semantic seed exemplars, and mixing the two paradigms would
+    invalidate the A/B comparison between scoring versions.
+    """
+    if USE_SEMANTIC_SCORING:
+        return score_lead(text)
+
     found_kws, base_score = score_text(text)
     text_lower = text.lower()
     extra_score = 0

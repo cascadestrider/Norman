@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from serpapi import GoogleSearch
 from norman.scouts.base import BaseScout
 from norman.models import Lead, ScoutResult
-from norman.scoring import score_text
+from norman.scoring_v2 import score_lead
 from norman.config import (
     SERP_API_KEY,
     WEB_HEADERS,
@@ -101,7 +101,7 @@ class BingScout(BaseScout):
                 p.get_text() for p in soup.find_all(["p", "div"]) if len(p.get_text()) > 30
             )
             title = soup.title.string if soup.title else "Unknown"
-            found_kws, score = score_text(text)
+            found_kws, score = score_lead(text)
 
             return Lead(
                 url=url,
