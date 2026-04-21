@@ -29,3 +29,6 @@ norman/.claude/
 
 # Pre-merge backups
 *.pre-p1
+
+# macOS Pages files
+*.pages
