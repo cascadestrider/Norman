@@ -7,6 +7,7 @@ from norman.models import Lead, ScoutResult
 from norman.scouts import ALL_SCOUTS
 from norman.scouts.base import BaseScout
 from norman.analyst import run_analyst
+from norman.classifier import classify_source_type
 from norman.delivery import run_delivery
 from norman.db import init_db, get_seen_urls, save_lead
 from norman.config import SCORE_THRESHOLD
@@ -61,10 +62,30 @@ def run_pipeline():
 
     print(f"\n📊 {len(all_leads)} qualifying leads after dedup (threshold: {SCORE_THRESHOLD})")
 
-    # --- Step 3: Dispatch Analyst ---
+    # --- Step 2.5: Classify source type, split customer voice vs competitor intel ---
+    print(f"🏷️  Classifying source type for {len(all_leads)} leads...")
+    customer_voice_leads: list[Lead] = []
+    competitor_intel_leads: list[Lead] = []
+    for lead in all_leads:
+        lead.source_type = classify_source_type(lead.title, lead.snippet, lead.url)
+        if lead.source_type == "customer_voice":
+            customer_voice_leads.append(lead)
+        elif lead.source_type in ("retailer", "editorial_roundup"):
+            competitor_intel_leads.append(lead)
+        else:
+            # Treat unknown as customer_voice to stay conservative — the
+            # analyst can still flag them. Switch to competitor_intel if
+            # we decide unknowns are more likely to be marketing noise.
+            customer_voice_leads.append(lead)
+    print(
+        f"  customer_voice (→ analyst): {len(customer_voice_leads)} | "
+        f"competitor_intel (stored only): {len(competitor_intel_leads)}"
+    )
+
+    # --- Step 3: Dispatch Analyst on customer-voice leads only ---
     print("🧠 Running Analyst...")
     try:
-        analyst_output = run_analyst(all_leads)
+        analyst_output = run_analyst(customer_voice_leads)
         print(f"  ✅ Analyst enriched {analyst_output.total_leads} leads")
     except Exception as e:
         print(f"  ❌ Analyst failed: {e}")
@@ -75,18 +96,21 @@ def run_pipeline():
             AnalystLead(
                 url=l.url, title=l.title, score=l.score, keywords=l.keywords,
                 source=l.source, platform=l.platform, geo=l.geo, snippet=l.snippet,
+                source_type=l.source_type,
             )
-            for l in all_leads
+            for l in customer_voice_leads
         ]
         analyst_output = AnalystOutput(
             date=today,
-            total_leads=len(all_leads),
+            total_leads=len(customer_voice_leads),
             segments={"general": fallback_leads},
             top_3=fallback_leads[:3],
         )
 
     # --- Step 4: Build run log (printed to terminal + passed to Delivery) ---
-    run_log = _build_run_log(today, scout_results, analyst_output)
+    run_log = _build_run_log(
+        today, scout_results, analyst_output, competitor_intel_leads
+    )
     print(run_log)
 
     # --- Step 5: Dispatch Delivery ---
@@ -97,13 +121,18 @@ def run_pipeline():
     print(f"  Klaviyo:   {delivery_status.klaviyo}")
     print(f"  Dashboard: {delivery_status.dashboard}")
 
-    # --- Save new leads to DB ---
-    for lead in all_leads:
+    # --- Save all leads (both kinds) to DB ---
+    for lead in customer_voice_leads + competitor_intel_leads:
         save_lead(conn, lead)
     conn.close()
 
 
-def _build_run_log(today, scout_results, analyst_output) -> str:
+def _build_run_log(
+    today,
+    scout_results,
+    analyst_output,
+    competitor_intel_leads: list[Lead] | None = None,
+) -> str:
     """Build the terminal-style run summary string. Printed locally and sent to Discord."""
     scout_statuses = []
     for name, result in scout_results.items():
@@ -112,17 +141,25 @@ def _build_run_log(today, scout_results, analyst_output) -> str:
 
     top_lead = analyst_output.top_3[0] if analyst_output.top_3 else None
     top_str = (
-        f"{top_lead.title[:60]} ({top_lead.source}) — Score {top_lead.score}/100"
+        f"{top_lead.title[:60]} ({top_lead.source}) — Score {top_lead.score}/100 [{top_lead.source_type}]"
         if top_lead else "none"
     )
 
     sources_with_leads = sum(1 for r in scout_results.values() if r.leads)
 
+    competitor_intel_leads = competitor_intel_leads or []
+    retailer_count = sum(1 for l in competitor_intel_leads if l.source_type == "retailer")
+    editorial_count = sum(
+        1 for l in competitor_intel_leads if l.source_type == "editorial_roundup"
+    )
+
     return (
         f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Norman Run Complete — {today}\n"
         f"Scouts: {' | '.join(scout_statuses)}\n"
-        f"Total leads: {analyst_output.total_leads} across {sources_with_leads} sources\n"
+        f"Customer-voice leads: {analyst_output.total_leads} across {sources_with_leads} sources\n"
+        f"Competitor intel (not analyzed): {len(competitor_intel_leads)} "
+        f"(retailer: {retailer_count}, editorial: {editorial_count})\n"
         f"Top lead: {top_str}\n"
         f"Analyst: ✅ {analyst_output.total_leads} leads enriched\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

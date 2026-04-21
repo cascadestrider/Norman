@@ -13,6 +13,7 @@ class Lead:
     platform: str        # reddit | web | youtube | x | facebook | instagram | tiktok
     geo: Optional[str] = None
     snippet: str = ""
+    source_type: str = "unknown"  # customer_voice | retailer | editorial_roundup | unknown
 
 
 @dataclass
