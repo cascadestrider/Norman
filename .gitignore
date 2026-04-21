@@ -32,3 +32,6 @@ norman/.claude/
 
 # macOS Pages files
 *.pages
+
+# macOS Finder metadata
+.DS_Store
