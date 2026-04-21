@@ -7,6 +7,15 @@ Why: keyword scoring rewards any page that repeats pain-point vocabulary,
 which means competitor product pages and editorial roundups (stuffed with
 "glare", "polarized", "eye strain") score as high as real user complaints.
 Embedding similarity to real-voice exemplars should separate the two.
+
+Seed exemplars refreshed 2026-04-21 from client pain-point input:
+- Golf vision (ball tracking, depth perception, reading greens, water hazards)
+- Screen visibility (phone / watch / GPS / HUD with polarized lenses)
+- Headaches & sensitivity (post-concussion, photophobia, color distortion,
+  99% polarization side-effects)
+
+Fishing exemplars preserved from prior version (client input did not cover
+fishing; existing Reddit fishing pain points are still accurate signal).
 """
 
 from __future__ import annotations
@@ -20,30 +29,40 @@ from norman.config import USE_SEMANTIC_SCORING, VOYAGE_API_KEY
 
 
 # First-person pain-point exemplars. Written to sound like real Reddit /
-# forum posters — not like the keyword table. Deliberately varied across
-# activities (driving, fishing, golf, riding) and failure modes (glare,
-# fog, strain, distortion, fit).
+# forum posters — not like the keyword table. Distribution across the five
+# active segments (golf 5, commuter 3, motorcycle 3, fishing 2, sensitivity 7).
+# Sensitivity gets the largest share because the file 3 pain is the most
+# emotionally loaded and underserved category per client input.
 SEED_EXEMPLARS: list[str] = [
-    "driving home yesterday I literally could not see the road, the sun was hitting the windshield and my sunglasses did nothing",
-    "bought these supposedly polarized sunglasses and my eyes are still killing me after a day on the water, there's still glare everywhere",
-    "anyone else get a splitting headache after a long drive into the sun? my current shades aren't cutting it",
+    # Golf — file 1 (5 exemplars)
+    "took my sunglasses off on every tee shot because I literally can't track the ball with them on, this is absurd",
+    "the greens look completely fake with my polarized lenses, I can't read break anymore and my handicap is suffering",
+    "why does every 'golf' sunglass option out there look like something from a ladies boutique with the pink and purple lenses",
+    "bought polarized sunglasses specifically for golf and now depth perception feels weird on approach shots, anyone else",
+    "water hazards still blast glare right back at me through my polarized, what polarization percentage am I actually supposed to get",
+
+    # Commuter / screen visibility — file 2 (3 exemplars)
+    "can't see my phone screen at all with these polarized sunglasses on, have to take them off at every stoplight to check maps",
+    "my smartwatch is completely invisible with my sunglasses, what's the point of the watch if I can't glance at it outside",
+    "GPS screen goes dark and pixelated the moment I put my polarized sunglasses on, this is genuinely dangerous while driving",
+
+    # Motorcycle / screen visibility — file 2 (3 exemplars)
+    "the heads up display on my helmet is completely gone when I put my polarized sunglasses on, makes the HUD useless",
+    "riding with polarized sunglasses and my dashboard is pitch black, have to keep lifting them to check speed",
+    "need sunglasses that don't kill my phone screen when I'm navigating on the bike, every polarized pair has this problem",
+
+    # Sensitivity — file 3 (7 exemplars)
+    "my sunglasses give me an actual headache after 10 minutes of driving, everything feels gray and dreary and wrong",
+    "post-concussion and the light sensitivity is brutal, every pair of sunglasses I try either does nothing or makes it worse",
+    "eyes hurt after wearing my sunglasses for even a short trip, feels like something is off about how they're filtering the light",
+    "I just want to see the world accurately, these polarized lenses make greens look oversaturated and everything else washed out",
+    "does anyone else get headaches from polarized sunglasses, I'm starting to think the 99 percent polarization is the actual problem",
+    "LED headlights at night still blast glare through my polarized pair, what are these lenses actually doing at this point",
+    "dealing with photophobia and every sunglass I buy is either way too dark or not protective enough, need something tunable",
+
+    # Fishing — preserved from prior SEED_EXEMPLARS (2 exemplars)
     "fishing all morning and the glare off the water made it impossible to see fish, what am I doing wrong with my lenses",
-    "I wear glasses for golf and the contrast on the greens is terrible, everything looks washed out with most tints",
-    "rode for 4 hours today and my eyes are burning, wind getting behind the lens and bright sun both roasting me",
-    "every pair of sunglasses I own fogs up the second I stop moving, this is the third brand I've tried",
-    "looking for actual honest reviews not sponsored garbage, need sunglasses that handle bright snow glare",
-    "the distortion at the edges of these lenses is making me nauseous when I turn my head while riding",
-    "why does no one make sunglasses that actually block glare from wet pavement, I keep almost getting into accidents",
-    "my wife says I'm squinting constantly and getting wrinkles, my current sunglasses clearly aren't dark enough",
-    "I need ANSI rated shooting glasses that don't feel like safety goggles, every option looks terrible",
-    "switched to polarized last year and honestly I can't tell the difference, still getting eye strain by 3pm",
-    "sunglasses kept slipping off my face every time I leaned over the boat, need something that actually stays put",
-    "driving into a low winter sun with these shades on and I might as well be blind, dangerous honestly",
-    "got prescription sunglasses from the eye doctor and the glare is WORSE than my $20 gas station pair, what",
-    "anyone find sunglasses that work for both early morning fishing and midday when the sun is overhead",
-    "the edges of my sunglasses let so much side light in that I basically can't use them while driving",
-    "3 hours on the motorcycle and I got home with a pounding headache right behind my eyes, sun was brutal",
-    "literally every sunglasses review on YouTube is a sponsored ad, where do real people talk about what actually works",
+    "bought these supposedly polarized sunglasses and my eyes are still killing me after a day on the water, there's still glare everywhere",
 ]
 
 

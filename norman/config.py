@@ -19,30 +19,64 @@ USE_SEMANTIC_SCORING = os.getenv("USE_SEMANTIC_SCORING", "0") == "1"
 # --- Scoring ---
 SCORE_THRESHOLD = 30
 
+# Legacy keyword scorer — only used when USE_SEMANTIC_SCORING=0.
+# Refreshed 2026-04-21 against client pain-point input (golf vision,
+# screen visibility, headaches/sensitivity). Weights tuned to favor
+# language that signals real customer distress over generic product vocab.
 KEYWORDS = {
-    "blinded by glare": 10,
-    "can't see in sun": 10,
-    "eye strain": 8,
-    "ansi z87": 8,
-    "headache sun": 8,
-    "eye injury": 8,
-    "shooting glasses": 7,
-    "sun glare": 7,
-    "glare": 6,
-    "blinded": 6,
-    "can't see": 6,
-    "eye protection": 6,
-    "vision problems": 6,
-    "polarized": 5,
-    "distortion": 5,
-    "uv protection": 5,
-    "bright light": 5,
-    "lens quality": 4,
-    "wrap around": 4,
+    # Golf vision (file 1)
+    "can't see golf ball": 10,
+    "ball tracking sunglasses": 9,
+    "reading greens": 9,
+    "depth perception sunglasses": 9,
+    "water hazard glare": 8,
+    "polarization percentage": 7,
+    "pink purple golf lenses": 7,
+    "golf lens color": 6,
+    "golf sunglasses": 5,
+
+    # Screen visibility (file 2)
+    "can't see phone": 10,
+    "can't read watch": 9,
+    "heads up display sunglasses": 9,
+    "phone screen pixelated": 9,
+    "phone screen dark sunglasses": 8,
+    "GPS screen visibility": 8,
+    "HUD compatible sunglasses": 7,
+    "screen goes dark": 7,
+
+    # Headaches / sensitivity (file 3)
+    "sunglasses cause headache": 10,
+    "sunglasses headache": 9,
+    "post concussion sunglasses": 10,
+    "concussion light sensitivity": 10,
+    "photophobia sunglasses": 9,
+    "eyes hurt sunglasses": 9,
+    "light sensitivity sunglasses": 9,
+    "sunglasses eye strain": 8,
+    "sunglasses too dark": 7,
+    "color distortion sunglasses": 7,
+    "LED glare sunglasses": 7,
+    "99 percent polarized problems": 7,
+    "alternatives to polarized": 6,
+    "do I need polarized": 5,
+
+    # Cross-cutting safety net (applies across files 1-3)
+    "polarized sunglasses review": 4,
+    "activity specific sunglasses": 5,
+    "color accuracy sunglasses": 6,
+
+    # Fishing — preserved from prior config (client input did not cover fishing)
+    "polarized fishing sunglasses": 5,
+    "fishing water glare": 6,
+    "sight fishing sunglasses": 5,
 }
 
 # --- Segments ---
-SEGMENTS = ["golf", "fishing", "motorcycle", "commuter"]
+# Added "sensitivity" as a fifth segment (2026-04-21) based on client
+# pain-point input. This captures post-concussion, migraine-prone, and
+# photophobia-driven shoppers — an underserved, high-conversion audience.
+SEGMENTS = ["golf", "fishing", "motorcycle", "commuter", "sensitivity"]
 
 # --- Excluded Domains (Google scout) ---
 EXCLUDED_DOMAINS = [
@@ -63,21 +97,60 @@ REDDIT_HEADERS = {
 }
 
 REDDIT_SUBREDDITS = {
+    # Golf — refreshed per client input (file 1)
+    "golf": ["golf", "golfequipment", "golfing", "discgolf"],
+
+    # Fishing — preserved (client input did not cover fishing)
     "fishing": ["fishing", "flyfishing", "bassfishing", "kayakfishing"],
-    "golf": ["golf", "golfequipment", "discgolf"],
+
+    # Motorcycle — preserved; overlaps with screen-visibility pain (file 2)
     "motorcycle": ["motorcycles", "motocamping", "rideIt", "advriding"],
+
+    # Commuter — preserved; overlaps with screen-visibility pain (file 2)
     "commuter": ["cycling", "bikecommuting", "running", "hiking", "hunting"],
+
+    # Sensitivity — new per client input (file 3)
+    # Post-concussion, migraine, and photophobia communities
+    "sensitivity": ["Concussion", "TBI", "migraine", "optometry", "sunglasses", "health"],
 }
 
+# Reddit search terms: refreshed per client input with fishing preserved.
+# Used by the Reddit scout's search mode across subreddits.
 REDDIT_SEARCH_TERMS = [
-    "sunglasses glare",
-    "eye strain",
-    "polarized sunglasses",
-    "can't see in sun",
-    "blinded glare",
-    "shooting glasses",
-    "uv protection",
-    "lens distortion",
+    # Golf (file 1)
+    "can't see golf ball sunglasses",
+    "polarized sunglasses golf",
+    "golf sunglasses depth perception",
+    "reading greens sunglasses",
+    "best lens color for golf",
+    "polarization percentage for golf",
+
+    # Screen visibility (file 2)
+    "can't see phone with sunglasses",
+    "polarized sunglasses phone screen",
+    "can't read watch sunglasses",
+    "sunglasses GPS HUD",
+
+    # Headaches / sensitivity (file 3)
+    "sunglasses give me a headache",
+    "polarized sunglasses headache",
+    "post concussion sunglasses",
+    "concussion light sensitivity sunglasses",
+    "photophobia sunglasses",
+    "sunglasses eyes hurt",
+    "sunglasses too dark",
+    "do I need polarized sunglasses",
+    "sunglasses color distortion",
+    "LED glare sunglasses",
+    "alternatives to polarized sunglasses",
+
+    # Fishing — preserved
+    "polarized sunglasses fishing",
+    "fishing sunglasses glare water",
+
+    # Cross-cutting safety net
+    "sunglasses recommendation",
+    "best polarized sunglasses",
 ]
 
 # --- Google (SerpAPI) ---
@@ -87,52 +160,118 @@ WEB_HEADERS = {
     "Referer": "https://www.google.com/",
 }
 
+# GOOGLE_QUERIES: refreshed 2026-04-21 from client pain-point files.
+# Golf, motorcycle, commuter, sensitivity updated; fishing preserved.
 GOOGLE_QUERIES = {
+    # Golf — file 1
+    "golf": [
+        "can't see golf ball sunglasses",
+        "best sunglasses for golf ball tracking",
+        "polarized sunglasses golf yes or no",
+        "golf sunglasses depth perception",
+        "reading greens sunglasses",
+        "golf sunglasses glare water hazard",
+        "best lens color for golf sunglasses",
+        "golf sunglasses not pink purple alternatives",
+        "polarization percentage for golf",
+        "color contrast golf sunglasses",
+        "sunglasses improve golf game",
+        "golf sunglasses visual handicap",
+        "best golf sunglasses 2025",
+        "sunglasses for golf Reddit",
+        "golf tournament sunglasses",
+    ],
+
+    # Motorcycle — file 2 (screen visibility overlaps heavily with riders)
+    "motorcycle": [
+        "motorcycle sunglasses HUD compatible",
+        "polarized sunglasses heads up display motorcycle",
+        "can't see GPS with sunglasses motorcycle",
+        "best motorcycle sunglasses phone screen",
+        "polarized sunglasses motorcycle dashboard",
+    ],
+
+    # Commuter — file 2 + file 3
+    "commuter": [
+        "can't see phone sunglasses",
+        "polarized sunglasses phone screen dark",
+        "sunglasses phone screen pixelation",
+        "can't read watch with sunglasses",
+        "see through polarized lenses phone",
+        "best sunglasses for phone screen visibility",
+        "sunglasses too dark phone screen",
+        "polarized sunglasses GPS screen visibility",
+    ],
+
+    # Sensitivity — file 3 (new segment)
+    "sensitivity": [
+        "sunglasses causing headaches",
+        "why do my sunglasses give me a headache",
+        "polarized sunglasses headache",
+        "sunglasses eye strain",
+        "post concussion sunglasses",
+        "concussion light sensitivity sunglasses",
+        "sunglasses too dark solution",
+        "do I need polarized sunglasses",
+        "sunglasses color distortion",
+        "LED glare sunglasses",
+        "sunglasses not accurate color",
+        "alternatives to polarized sunglasses",
+        "best sunglasses for light sensitivity",
+        "photophobia sunglasses",
+        "sunglasses eyes hurt",
+        "99 percent polarized sunglasses problems",
+    ],
+
+    # Fishing — preserved from prior config (client input did not cover fishing)
     "fishing": [
         "polarized sunglasses fishing glare water review",
         "polarized fishing sunglasses water glare comparison",
         "fishing sunglasses eye strain forum",
     ],
-    "golf": [
-        "best sunglasses for golf glare reduction review",
-        "golf sunglasses eye strain bright sun forum",
-        "anti-glare sunglasses for golfers recommendation",
-    ],
-    "motorcycle": [
-        "motorcycle riding sunglasses glare protection",
-        "best sunglasses for motorcycle riding forum",
-        "motorcycle riding sunglasses UV protection review",
-    ],
-    "commuter": [
-        "best sunglasses for driving glare reduction review",
-        "driving into sun glare eye strain forum",
-        "best driving sunglasses glare reduction review",
-        "best anti-glare sunglasses review",
-        "eye strain driving bright sun forum",
-        "sunglasses fog up reddit",
-        "blinded by glare outdoor forum",
+
+    # Cross-cutting safety-net queries that apply across multiple segments
+    "general": [
+        "polarized sunglasses review",
+        "sunglasses that work with phones",
+        "sunglasses color distortion",
+        "activity specific sunglasses",
+        "best sunglasses 2025",
+        "sunglasses recommendation reddit",
+        "polarization percentage explained",
     ],
 }
 
 # --- YouTube ---
+# YouTube pools favor queries that match review/discussion video formats.
 YOUTUBE_QUERIES = {
+    "golf": [
+        "best sunglasses for golf review",
+        "golf sunglasses ball tracking",
+        "polarized sunglasses golf test",
+        "reading greens with sunglasses",
+        "best golf sunglasses 2025",
+    ],
+    "motorcycle": [
+        "motorcycle sunglasses HUD review",
+        "best riding sunglasses phone screen",
+    ],
+    "commuter": [
+        "polarized sunglasses phone screen test",
+        "best driving sunglasses review",
+        "sunglasses color distortion review",
+    ],
+    "sensitivity": [
+        "sunglasses headache review",
+        "post concussion sunglasses review",
+        "sunglasses for light sensitivity review",
+        "polarized vs non polarized headache",
+        "alternatives to polarized sunglasses review",
+    ],
+    # Fishing — preserved
     "fishing": [
         "polarized sunglasses fishing review",
         "fishing sunglasses glare water",
-    ],
-    "golf": [
-        "best sunglasses for golf review",
-        "golf sunglasses glare bright sun",
-    ],
-    "motorcycle": [
-        "motorcycle sunglasses review",
-        "best riding sunglasses UV protection",
-    ],
-    "commuter": [
-        "best driving sunglasses glare review",
-        "shooting glasses review",
-        "best polarized sunglasses outdoor",
-        "anti-glare sunglasses review",
     ],
 }
 
@@ -143,9 +282,18 @@ MODEL_PRICING = {
 }
 
 # --- Product context for Analyst ---
+# Updated 2026-04-21 to reflect client positioning input across all three
+# pain-point files: activity-tuned polarization (not 99%), color accuracy
+# over darkness, screen/HUD compatibility, sensitivity-friendly tuning.
 PRODUCT_FOCUS = (
-    "Torque Optics — Sunglasses with proprietary polarization lens technology. "
-    "Zero-glare polarization for specific activities (golf, fishing, riding, driving). "
-    "Superior lens clarity vs mainstream brands. Activity-specific lens tuning — "
-    "not generic polarization. UV protection + anti-fog options."
+    "Torque Optics — Sunglasses with proprietary activity-tuned polarization "
+    "technology. Not 99% polarized (which causes headaches, phone screen "
+    "blackout, and color distortion) and not zero polarized (which doesn't "
+    "cut glare). The right polarization percentage for each activity: "
+    "golf (preserves ball tracking + depth perception), fishing (max water "
+    "glare cut), commuter/riding (phone + GPS + HUD compatible), sensitivity "
+    "(minimal darkness, color-accurate, designed for post-concussion and "
+    "photophobia). Color accuracy over aggressive tinting. Alternatives to "
+    "the pink/purple 'golf lens' and the 99% 'pro fishing' assumptions that "
+    "dominate the market."
 )
