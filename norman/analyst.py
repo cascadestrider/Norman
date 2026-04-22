@@ -81,19 +81,26 @@ def classify_segment(lead: Lead) -> list[str]:
     return matched if matched else ["general"]
 
 
+def primary_segment(lead: Lead) -> str:
+    """Return the single best-fit segment by keyword-match count. Falls back
+    to "general" when no segment keywords hit. Ties broken by dict order.
+    """
+    text = f"{lead.title} {lead.snippet}".lower()
+    counts = {
+        seg: sum(1 for kw in kws if kw in text)
+        for seg, kws in SEGMENT_KEYWORDS.items()
+    }
+    best_seg, best_count = max(counts.items(), key=lambda kv: kv[1])
+    return best_seg if best_count > 0 else "general"
+
+
 def run_analyst(leads: list[Lead]) -> AnalystOutput:
     """Take scored leads, classify by segment, generate ad copy for each."""
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     segments: dict[str, list[AnalystLead]] = {s: [] for s in SEGMENTS + ["general"]}
-    flagged: list[dict] = []
 
     for lead in leads:
         if len(lead.snippet.strip()) < 30:
-            flagged.append({
-                "url": lead.url,
-                "error": "Insufficient content to generate strategy — snippet too short",
-                "score": lead.score,
-            })
             continue
 
         lead_segments = classify_segment(lead)
@@ -145,7 +152,6 @@ def run_analyst(leads: list[Lead]) -> AnalystOutput:
         total_leads=total,
         segments=segments,
         top_3=top_3,
-        flagged=flagged,
     )
 
 

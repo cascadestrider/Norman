@@ -1,36 +1,64 @@
-# 📡 Contextual-Enigne (AI Prototype)
+# Norman
 
-A privacy-first, cookieless advertising engine that uses AI to analyze website content and generate hyper-targeted ad strategies in real-time.
+Norman is an AI-driven ad-intelligence pipeline for Torque Optics. It
+continuously surfaces first-person customer pain-point content across the web
+(Reddit, Google, Bing, YouTube, and others), scores it for relevance,
+classifies it, and hands the highest-signal leads to an analyst agent that
+generates segment-specific ad copy. The output is delivered to a Discord
+channel and a Markdown report each run.
 
-## 🚀 Key Features
-* **Stealth Scout:** Advanced scraping logic using User-Agent rotation and Referrer spoofing to navigate diverse web architectures.
-* **Model Agnostic AI:** Integrated with high-performance LLMs (Llama 3 via Groq) for sub-second contextual analysis.
-* **Real-time Strategy:** Generates specific product recommendations and ad copy based on the live "vibe" of a URL.
+## Architecture
 
-## 🛠️ Tech Stack
-* **Language:** Python 3
-* **Scraping:** BeautifulSoup4, Requests
-* **AI Inference:** Groq SDK / OpenAI SDK
-* **Environment:** GitHub Codespaces (Linux)
+Scouts (`norman/scouts/`) run in parallel, each returning `Lead` objects for
+URLs above the score threshold. Scores come from `norman/scoring_v2.py`, which
+uses Voyage embeddings against curated exemplars. A source-type classifier
+(`norman/classifier.py`, Claude Haiku) tags each lead as `customer_voice`,
+`retailer`, `editorial_roundup`, or `unknown`. Only customer-voice leads reach
+the analyst (`norman/analyst.py`, Claude Sonnet), which classifies by
+segment and generates ad copy using segment-specific positioning. Delivery
+(`norman/delivery.py`) posts to Discord with rate-limit backoff and writes a
+Markdown report to `reports/`. All leads are persisted to SQLite
+(`norman/db.py`) with a 14-day revisit window so evolving threads can be
+re-scored without indefinite "seen once, dead forever" dedup.
 
-## 📖 How it Works
-1. The **Scout** visits a URL and extracts semantic data while masking its automated identity.
-2. The **Engine** cleans the text and identifies key contextual pillars.
-3. The **AI Brain** processes the pillars to output a marketing strategy tailored to the reader's current intent.
+## Running
 
+```
+python run.py --once     # single run, exit
+python run.py            # run once, then daily at 9 AM via APScheduler
+```
 
-## Contextual targeting engine
+## Required environment variables
 
------
+These must be set (typically via `.env`) for a full run. Missing keys cause
+the corresponding scout or agent to no-op with a warning; they do not crash
+the pipeline.
 
-### Description from Contectual-enigne
-[Contextual targeting](https://www.criteo.com/blog/contextual-vs-behavioral-targeting/) - 
-mechanism for extraction features from page content for ads targeting.
+- `NORMAN_ANTHROPIC_KEY` — analyst (Claude Sonnet) and classifier (Claude Haiku)
+- `VOYAGE_API_KEY` — semantic scoring embeddings
+- `USE_SEMANTIC_SCORING` — set to `1` to enable semantic scoring (falls back
+  to legacy keyword scoring when unset or `0`)
+- `SERP_API_KEY` — Google, Bing, and Amazon scouts (shared SerpAPI quota)
+- `YOUTUBE_API_KEY` — YouTube scout
+- `DISCORD_WEBHOOK_URL` — Discord delivery
 
-### Project technologies
-1. Golang
-2. Python 
-3. React
-4. NATS
+## Segments
 
----
+The pipeline currently targets five customer segments plus a `general`
+catch-all:
+
+- `golf` — ball tracking, reading greens, depth perception
+- `fishing` — water glare, sight fishing
+- `motorcycle` — HUD / GPS / phone-screen compatibility while riding
+- `commuter` — daily-driver screen visibility and windshield glare
+- `sensitivity` — post-concussion, migraine, photophobia, light-sensitive users
+
+## Per-segment-per-lead analyst behavior
+
+The analyst currently generates one piece of ad copy per (lead × matched
+segment) pair. A single URL that keyword-matches both `golf` and `sensitivity`
+produces two AnalystLead outputs, one per segment. This is a provisional
+design — a future weekly-theme-synthesis layer will change the unit of
+analysis to themes, at which point the per-segment-per-lead duplication goes
+away. For DB storage, Norman picks the primary segment (by keyword-match
+count) and stores only that segment's strategy JSON.

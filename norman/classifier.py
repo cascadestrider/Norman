@@ -30,10 +30,17 @@ _MODEL = "claude-haiku-4-5"
 _PROMPT_TEMPLATE = """You are classifying a web page found by a lead-research pipeline into one of four source types.
 
 Definitions:
-- customer_voice: First-person user voice. Reddit threads, forum posts, YouTube comments, blog rants, tweets — where actual users describe their own experience, complaint, or question.
-- retailer: Brand or retailer product pages selling sunglasses/eyewear. Examples: Wiley X, Oakley, Ray-Ban, Amazon product listings, DTC brand sites, manufacturer pages.
-- editorial_roundup: Third-person "best of" list, buyer's guide, review roundup, or affiliate-style ranking. Examples: Wirecutter, GearJunkie, Forbes Vetted, "The 10 Best Sunglasses for X" articles.
-- unknown: None of the above, or the content is ambiguous / insufficient.
+- customer_voice: First-person user voice. Reddit/forum threads, YouTube comments, personal blog posts, tweets, Q&A/support boards — real people describing their own experience, question, or complaint. Also includes medical/informational pages where people research their own condition (photophobia, light sensitivity, concussion/TBI, migraine, post-surgery recovery).
+- retailer: Brand or retailer product pages selling sunglasses/eyewear (Oakley, Ray-Ban, Warby Parker, Maui Jim, Costa, Smith, Wiley X, Amazon product listings, DTC brand sites).
+- editorial_roundup: Third-person "best of" list, buyer's guide, review roundup, or affiliate-style ranking (Wirecutter, GearJunkie, Forbes Vetted, "10 Best Sunglasses for X").
+- unknown: Genuinely no signal — rare. Prefer another label when URL or snippet hints.
+
+URL signals are authoritative. When URL and snippet conflict (e.g., a reddit.com thread whose snippet reads promotionally), the URL wins — URL is harder to fake than extracted page text.
+- Host matches reddit.com, stackexchange.com, quora.com, or contains "forum" / ".forum" / "/forums/" → customer_voice.
+- Host is a medical or informational domain (.edu, .gov, mayoclinic.org, webmd.com, completeconcussions.com, healthline.com, and similar health/medical sites) AND topic touches light sensitivity, photophobia, concussion/TBI, migraine, or post-surgery recovery → customer_voice (real people researching their own condition).
+- Path contains /review/, /reviews/, /best-, /top-, /vs/, /gear-guide/, /roundup/, /comparison/, /ranked/ → editorial_roundup.
+- Host is any eyewear brand or single-brand eyewear/optics retailer (examples: oakley.com, ray-ban.com, warbyparker.com, maui-jim.com, costa.com, smith-optics.com, wileyx.com — treat as examples, not an exhaustive list; julbo.com, tifosi.com, persol.com, and similar direct-to-consumer eyewear sites also qualify) OR path contains /product/, /shop/, /p/, /buy/, /dp/ → retailer.
+Only output "unknown" when URL and snippet together give no signal. If you have partial URL signal but low confidence (e.g., unfamiliar domain with a commerce-adjacent path, or an unknown host under a forum-shaped URL), commit to the best-fit label rather than falling back to unknown.
 
 Lead:
 URL: {url}

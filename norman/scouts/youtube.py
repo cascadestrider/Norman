@@ -2,7 +2,10 @@ import requests
 from norman.scouts.base import BaseScout
 from norman.models import Lead, ScoutResult
 from norman.scoring_v2 import score_lead
+from norman.query_selector import pick_queries
 from norman.config import YOUTUBE_API_KEY, YOUTUBE_QUERIES, SCORE_THRESHOLD
+
+YOUTUBE_QUERIES_PER_SEGMENT = 5
 
 
 class YouTubeScout(BaseScout):
@@ -12,19 +15,28 @@ class YouTubeScout(BaseScout):
     def run(self, seen_urls: set[str]) -> ScoutResult:
         leads: list[Lead] = []
         errors: list[str] = []
+        notes: list[str] = []
 
         if not YOUTUBE_API_KEY:
             errors.append("YouTube scout skipped — no YOUTUBE_API_KEY configured")
-            return ScoutResult(source=self.source, leads=leads, errors=errors)
+            return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
         visited_this_run: set[str] = set()
+        total_pool = sum(len(q) for q in YOUTUBE_QUERIES.values())
+        selected_count = 0
 
         for segment, queries in YOUTUBE_QUERIES.items():
-            for term in queries:
+            selected = pick_queries(queries, YOUTUBE_QUERIES_PER_SEGMENT)
+            selected_count += len(selected)
+            for term in selected:
                 videos = self._search_videos(term, errors)
                 if videos is None:
                     # quota exceeded — stop immediately
-                    return ScoutResult(source=self.source, leads=leads, errors=errors)
+                    notes.append(
+                        f"YouTube: selected {selected_count} of {total_pool} queries today "
+                        f"(n={YOUTUBE_QUERIES_PER_SEGMENT}/segment, stopped early on quota)"
+                    )
+                    return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
                 for video_id, title, description in videos:
                     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -47,7 +59,11 @@ class YouTubeScout(BaseScout):
                             snippet=full_text[:300],
                         ))
 
-        return ScoutResult(source=self.source, leads=leads, errors=errors)
+        notes.append(
+            f"YouTube: selected {selected_count} of {total_pool} queries today "
+            f"(n={YOUTUBE_QUERIES_PER_SEGMENT}/segment)"
+        )
+        return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
     def _search_videos(
         self, term: str, errors: list[str]

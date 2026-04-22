@@ -1,15 +1,18 @@
 import requests
 from bs4 import BeautifulSoup
 from serpapi import GoogleSearch
-from norman.scouts.base import BaseScout
+from norman.scouts.base import BaseScout, reddit_fetch_url
 from norman.models import Lead, ScoutResult
 from norman.scoring_v2 import score_lead
+from norman.query_selector import pick_queries
 from norman.config import (
     SERP_API_KEY,
     WEB_HEADERS,
     EXCLUDED_DOMAINS,
     SCORE_THRESHOLD,
 )
+
+BING_QUERIES_PER_SEGMENT = 10
 
 # Bing surfaces different content than Google — more forum threads and
 # hobbyist communities, skewing 35-65 demographic (golf/fishing alignment).
@@ -53,15 +56,20 @@ class BingScout(BaseScout):
     def run(self, seen_urls: set[str]) -> ScoutResult:
         leads: list[Lead] = []
         errors: list[str] = []
+        notes: list[str] = []
 
         if not SERP_API_KEY:
             errors.append("Bing scout skipped — no SERP_API_KEY configured")
-            return ScoutResult(source=self.source, leads=leads, errors=errors)
+            return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
         visited_this_run: set[str] = set()
+        total_pool = sum(len(q) for q in BING_QUERIES.values())
+        selected_count = 0
 
         for segment, queries in BING_QUERIES.items():
-            for query in queries:
+            selected = pick_queries(queries, BING_QUERIES_PER_SEGMENT)
+            selected_count += len(selected)
+            for query in selected:
                 urls = self._search(query, errors)
                 for url in urls:
                     if url in seen_urls or url in visited_this_run:
@@ -73,7 +81,11 @@ class BingScout(BaseScout):
                     if lead and lead.score >= SCORE_THRESHOLD:
                         leads.append(lead)
 
-        return ScoutResult(source=self.source, leads=leads, errors=errors)
+        notes.append(
+            f"Bing: selected {selected_count} of {total_pool} queries today "
+            f"(n={BING_QUERIES_PER_SEGMENT}/segment)"
+        )
+        return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
     def _search(self, query: str, errors: list[str]) -> list[str]:
         urls = []
@@ -95,7 +107,8 @@ class BingScout(BaseScout):
 
     def _scrape_and_score(self, url: str, errors: list[str]) -> Lead | None:
         try:
-            resp = requests.get(url, headers=WEB_HEADERS, timeout=10)
+            fetch_url = reddit_fetch_url(url)
+            resp = requests.get(fetch_url, headers=WEB_HEADERS, timeout=10)
             soup = BeautifulSoup(resp.text, "html.parser")
             text = " ".join(
                 p.get_text() for p in soup.find_all(["p", "div"]) if len(p.get_text()) > 30

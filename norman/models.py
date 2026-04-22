@@ -32,6 +32,7 @@ class ScoutResult:
     source: str
     leads: list[Lead] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -40,7 +41,6 @@ class AnalystOutput:
     total_leads: int
     segments: dict[str, list[AnalystLead]] = field(default_factory=dict)
     top_3: list[AnalystLead] = field(default_factory=list)
-    flagged: list[dict] = field(default_factory=list)
 
 
 @dataclass

@@ -1,12 +1,13 @@
 """Norman Orchestrator — dispatches scouts in parallel, aggregates, routes to analyst → delivery."""
 
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 
-from norman.models import Lead, ScoutResult
+from norman.models import Lead, AnalystLead, ScoutResult
 from norman.scouts import ALL_SCOUTS
 from norman.scouts.base import BaseScout
-from norman.analyst import run_analyst
+from norman.analyst import run_analyst, primary_segment
 from norman.classifier import classify_source_type
 from norman.delivery import run_delivery
 from norman.db import init_db, get_seen_urls, save_lead
@@ -28,7 +29,7 @@ def run_pipeline():
     scout_results: dict[str, ScoutResult] = {}
 
     print(f"🔍 Dispatching {len(scouts)} scouts in parallel...")
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {
             executor.submit(scout.run, seen_urls): scout.name
             for scout in scouts
@@ -42,6 +43,8 @@ def run_pipeline():
                 err_count = len(result.errors)
                 status = "✅" if not result.errors else "⚠️"
                 print(f"  {status} {scout_name}: {lead_count} leads, {err_count} errors")
+                for note in result.notes:
+                    print(f"    · {note}")
             except Exception as e:
                 print(f"  ❌ {scout_name}: crashed — {e}")
                 scout_results[scout_name] = ScoutResult(
@@ -107,9 +110,45 @@ def run_pipeline():
             top_3=fallback_leads[:3],
         )
 
+    # --- Save all leads (both kinds) to DB and tally new/updated/revisited ---
+    # Build URL → {segment: AnalystLead} lookup so each customer_voice URL
+    # can be paired with the AnalystLead that matches its primary segment.
+    url_to_analyst: dict[str, dict[str, AnalystLead]] = {}
+    for seg_leads in analyst_output.segments.values():
+        for al in seg_leads:
+            url_to_analyst.setdefault(al.url, {})[al.segment] = al
+
+    save_counts = {"new": 0, "updated": 0, "revisited": 0}
+
+    for lead in customer_voice_leads:
+        seg_map = url_to_analyst.get(lead.url, {})
+        strategy_json = ""
+        if seg_map:
+            primary = primary_segment(lead)
+            analyst_lead = seg_map.get(primary) or next(iter(seg_map.values()))
+            try:
+                strategy_json = json.dumps({
+                    "segment": analyst_lead.segment,
+                    "problem_detected": analyst_lead.problem_detected,
+                    "why_we_win": analyst_lead.why_we_win,
+                    "ad_headline": analyst_lead.ad_headline,
+                    "ad_body": analyst_lead.ad_body,
+                    "placement_tip": analyst_lead.placement_tip,
+                }, ensure_ascii=False)
+            except (TypeError, ValueError) as e:
+                print(f"  ⚠️ strategy serialize failed for {lead.url}: {e}")
+                strategy_json = ""
+        status = save_lead(conn, lead, strategy=strategy_json)
+        save_counts[status] = save_counts.get(status, 0) + 1
+
+    for lead in competitor_intel_leads:
+        status = save_lead(conn, lead)
+        save_counts[status] = save_counts.get(status, 0) + 1
+
     # --- Step 4: Build run log (printed to terminal + passed to Delivery) ---
     run_log = _build_run_log(
-        today, scout_results, analyst_output, competitor_intel_leads
+        today, scout_results, analyst_output, competitor_intel_leads,
+        save_counts=save_counts,
     )
     print(run_log)
 
@@ -121,9 +160,6 @@ def run_pipeline():
     print(f"  Klaviyo:   {delivery_status.klaviyo}")
     print(f"  Dashboard: {delivery_status.dashboard}")
 
-    # --- Save all leads (both kinds) to DB ---
-    for lead in customer_voice_leads + competitor_intel_leads:
-        save_lead(conn, lead)
     conn.close()
 
 
@@ -132,6 +168,7 @@ def _build_run_log(
     scout_results,
     analyst_output,
     competitor_intel_leads: list[Lead] | None = None,
+    save_counts: dict[str, int] | None = None,
 ) -> str:
     """Build the terminal-style run summary string. Printed locally and sent to Discord."""
     scout_statuses = []
@@ -153,14 +190,32 @@ def _build_run_log(
         1 for l in competitor_intel_leads if l.source_type == "editorial_roundup"
     )
 
+    rotation_lines = [
+        note for r in scout_results.values() for note in r.notes
+    ]
+    rotation_block = (
+        "Query rotation:\n  " + "\n  ".join(rotation_lines) + "\n"
+        if rotation_lines
+        else ""
+    )
+
+    save_counts = save_counts or {}
+    save_block = (
+        f"Saved: {save_counts.get('new', 0)} new, "
+        f"{save_counts.get('updated', 0)} updated, "
+        f"{save_counts.get('revisited', 0)} revisited\n"
+    )
+
     return (
         f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Norman Run Complete — {today}\n"
         f"Scouts: {' | '.join(scout_statuses)}\n"
+        f"{rotation_block}"
         f"Customer-voice leads: {analyst_output.total_leads} across {sources_with_leads} sources\n"
         f"Competitor intel (not analyzed): {len(competitor_intel_leads)} "
         f"(retailer: {retailer_count}, editorial: {editorial_count})\n"
         f"Top lead: {top_str}\n"
         f"Analyst: ✅ {analyst_output.total_leads} leads enriched\n"
+        f"{save_block}"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )

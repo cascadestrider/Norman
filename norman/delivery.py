@@ -1,10 +1,13 @@
 import os
+import time
 import requests
 from norman.models import AnalystOutput, AnalystLead, DeliveryStatus
 from norman.config import DISCORD_WEBHOOK_URL
 from norman.token_tracker import token_tracker
 
 DISCORD_CHAR_LIMIT = 2000
+DISCORD_RATE_LIMIT_DELAY = 1.5  # seconds between webhook calls
+DISCORD_DEFAULT_RETRY_AFTER = 5.0  # fallback when Retry-After header missing
 
 SEGMENT_ICONS = {
     "fishing": "🎣",
@@ -57,6 +60,7 @@ def _post_discord(output: AnalystOutput, run_log: str) -> str:
         return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
 
     errors = []
+    stats = {"posted": 0, "retried": 0, "dropped": 0}
 
     if output.total_leads == 0:
         # Single combined message when there's nothing to report
@@ -70,25 +74,30 @@ def _post_discord(output: AnalystOutput, run_log: str) -> str:
         )
         if run_log:
             msg += f"\n```{run_log}```"
-        err = _send_webhook(msg)
+        err = _send_webhook(msg, stats)
         if err:
             errors.append(err)
     else:
         # Message 1 — Pipeline Run Log
-        err = _post_run_log(output, run_log)
+        err = _post_run_log(output, run_log, stats)
         if err:
             errors.append(f"Run log: {err}")
 
         # Message 2+ — Lead Intelligence Report (chunked by segment)
-        report_errors = _post_lead_report(output)
+        report_errors = _post_lead_report(output, stats)
         errors.extend(report_errors)
 
+    total = stats["posted"] + stats["retried"] + stats["dropped"]
+    summary = (
+        f"posted {stats['posted']}/{total} messages, "
+        f"{stats['retried']} retried, {stats['dropped']} dropped"
+    )
     if errors:
-        return f"⚠️ Discord partial: {'; '.join(errors)}"
-    return "✅ posted to Discord (run log + lead report)"
+        return f"⚠️ Discord partial ({summary}): {'; '.join(errors)}"
+    return f"✅ Discord: {summary}"
 
 
-def _post_run_log(output: AnalystOutput, run_log: str) -> str | None:
+def _post_run_log(output: AnalystOutput, run_log: str, stats: dict) -> str | None:
     """Post Message 1: the pipeline run log block."""
     sources = sorted(_collect_sources(output))
     seg_counts = {seg: len(leads) for seg, leads in output.segments.items() if leads}
@@ -125,10 +134,10 @@ def _post_run_log(output: AnalystOutput, run_log: str) -> str | None:
         if len(msg) + len(log_block) <= DISCORD_CHAR_LIMIT:
             msg += log_block
 
-    return _send_webhook(msg[:DISCORD_CHAR_LIMIT])
+    return _send_webhook(msg[:DISCORD_CHAR_LIMIT], stats)
 
 
-def _post_lead_report(output: AnalystOutput) -> list[str]:
+def _post_lead_report(output: AnalystOutput, stats: dict) -> list[str]:
     """Post Message 2+: full ad copy report, chunked at segment boundaries."""
     errors = []
     header = f"📊 **Norman Lead Intelligence — {output.date}**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -170,7 +179,7 @@ def _post_lead_report(output: AnalystOutput) -> list[str]:
         chunks.append(current)
 
     for chunk in chunks:
-        err = _send_webhook(chunk[:DISCORD_CHAR_LIMIT])
+        err = _send_webhook(chunk[:DISCORD_CHAR_LIMIT], stats)
         if err:
             errors.append(err)
 
@@ -245,19 +254,61 @@ def _write_markdown_report(output: AnalystOutput) -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _send_webhook(message: str) -> str | None:
-    """POST one message to Discord. Returns an error string on failure, None on success."""
+def _send_webhook(message: str, stats: dict | None = None) -> str | None:
+    """POST one message to Discord with rate-limit backoff.
+
+    Sleeps DISCORD_RATE_LIMIT_DELAY before the call. On HTTP 429, honors the
+    Retry-After header (fallback DISCORD_DEFAULT_RETRY_AFTER) and retries once.
+    Increments stats counters ("posted", "retried", "dropped") when provided.
+    Returns an error string on drop, None on success.
+    """
+    time.sleep(DISCORD_RATE_LIMIT_DELAY)
     try:
         resp = requests.post(
             DISCORD_WEBHOOK_URL,
             json={"content": message},
             timeout=10,
         )
-        if resp.status_code not in (200, 204):
-            return f"HTTP {resp.status_code}"
-        return None
     except Exception as e:
+        if stats is not None:
+            stats["dropped"] += 1
         return str(e)
+
+    if resp.status_code in (200, 204):
+        if stats is not None:
+            stats["posted"] += 1
+        return None
+
+    if resp.status_code == 429:
+        retry_after = DISCORD_DEFAULT_RETRY_AFTER
+        header = resp.headers.get("Retry-After")
+        if header:
+            try:
+                retry_after = float(header)
+            except ValueError:
+                pass
+        time.sleep(retry_after)
+        try:
+            resp = requests.post(
+                DISCORD_WEBHOOK_URL,
+                json={"content": message},
+                timeout=10,
+            )
+        except Exception as e:
+            if stats is not None:
+                stats["dropped"] += 1
+            return f"retry failed: {e}"
+        if resp.status_code in (200, 204):
+            if stats is not None:
+                stats["retried"] += 1
+            return None
+        if stats is not None:
+            stats["dropped"] += 1
+        return f"HTTP {resp.status_code} after retry"
+
+    if stats is not None:
+        stats["dropped"] += 1
+    return f"HTTP {resp.status_code}"
 
 
 def _collect_sources(output: AnalystOutput) -> set[str]:
