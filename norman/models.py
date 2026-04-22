@@ -49,4 +49,41 @@ class DeliveryStatus:
     discord: str = ""
     klaviyo: str = ""
     dashboard: str = ""
+    synthesis_markdown: str = ""
+    synthesis_discord: str = ""
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RepresentativeQuote:
+    quote: str
+    source_url: str
+    segment: str
+
+
+@dataclass
+class CreativeAngle:
+    angle: str
+    hook: str
+    proof_point: str
+
+
+@dataclass
+class ThemeOutput:
+    name: str
+    pain_point: str
+    segment_breakdown: dict[str, int] = field(default_factory=dict)
+    urgency_score: int = 0
+    representative_quotes: list[RepresentativeQuote] = field(default_factory=list)
+    creative_angles: list[CreativeAngle] = field(default_factory=list)
+
+
+@dataclass
+class SynthesisOutput:
+    week_of: str
+    leads_analyzed: int
+    summary: str
+    themes: list[ThemeOutput] = field(default_factory=list)
+    # Set when the synthesizer sampled a subset of the weekly corpus because
+    # the total exceeded the budget cap. None when the full corpus was used.
+    sampled_note: Optional[str] = None

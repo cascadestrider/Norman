@@ -1,8 +1,18 @@
 import os
 import time
+from datetime import date
+from typing import Optional
+
 import requests
-from norman.models import AnalystOutput, AnalystLead, DeliveryStatus
-from norman.config import DISCORD_WEBHOOK_URL
+
+from norman.models import (
+    AnalystOutput,
+    AnalystLead,
+    DeliveryStatus,
+    SynthesisOutput,
+    ThemeOutput,
+)
+from norman.config import DISCORD_WEBHOOK_URL, USE_PER_LEAD_ADS
 from norman.token_tracker import token_tracker
 
 DISCORD_CHAR_LIMIT = 2000
@@ -25,23 +35,26 @@ def run_delivery(
     klaviyo_configured: bool = False,
     dashboard_configured: bool = False,
 ) -> DeliveryStatus:
-    """Deliver analyst results to all configured channels."""
+    """Deliver analyst results to all configured channels.
+
+    Branches on USE_PER_LEAD_ADS: when off (default), emits a condensed
+    daily summary (run log + top 10 leads, no ad copy); when on, emits the
+    full per-lead ad intelligence report.
+    """
     status = DeliveryStatus()
 
-    # 1. Markdown report (always first — establishes the record)
-    status.markdown = _write_markdown_report(analyst_output)
+    if USE_PER_LEAD_ADS:
+        status.markdown = _write_markdown_report(analyst_output)
+        status.discord = _post_discord(analyst_output, run_log)
+    else:
+        status.markdown = _write_markdown_condensed(analyst_output)
+        status.discord = _post_discord_condensed(analyst_output, run_log)
 
-    # 2. Discord — two messages (run log + lead report), or one if no leads
-    status.discord = _post_discord(analyst_output, run_log)
-
-    # 3. Klaviyo (stub)
     status.klaviyo = (
         "⚠️ Klaviyo integration not yet implemented"
         if klaviyo_configured
         else "⚠️ not configured"
     )
-
-    # 4. Dashboard (stub)
     status.dashboard = (
         "⚠️ Dashboard integration not yet implemented"
         if dashboard_configured
@@ -199,6 +212,288 @@ def _format_lead_block(lead: AnalystLead) -> str:
         "─────────────────────\n",
     ]
     return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Condensed daily summary (USE_PER_LEAD_ADS=0)
+# ---------------------------------------------------------------------------
+
+def _post_discord_condensed(output: AnalystOutput, run_log: str) -> str:
+    """Discord delivery when per-lead ad generation is off. Posts the run
+    log plus the top 10 leads by score, no ad copy, no per-segment blocks.
+    """
+    if not DISCORD_WEBHOOK_URL:
+        return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
+
+    stats = {"posted": 0, "retried": 0, "dropped": 0}
+    errors: list[str] = []
+
+    sources = sorted(_collect_sources(output))
+    top_10 = _top_n_by_score(output, 10)
+
+    header = (
+        f"📡 **Norman Daily Run — {output.date}**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Customer-voice leads: **{output.total_leads}** across "
+        f"{', '.join(sources) if sources else 'no sources'}\n"
+        f"_Daily signal only; creative themes posted every Monday._\n"
+    )
+    if run_log:
+        header += f"\n```{run_log}```\n"
+
+    top_header = "\n🏆 **Top 10 Leads by Score**\n\n" if top_10 else ""
+    top_lines: list[str] = []
+    for i, lead in enumerate(top_10, 1):
+        top_lines.append(
+            f"{i}. **[{lead.title[:80]}]({lead.url})**\n"
+            f"   Score {lead.score} | {lead.source_type} | {lead.segment}"
+        )
+
+    # Assemble into chunks that respect the 2000-char Discord limit.
+    chunks: list[str] = []
+    current = header + top_header
+    for line in top_lines:
+        candidate = current + line + "\n"
+        if len(candidate) > DISCORD_CHAR_LIMIT:
+            if current.strip():
+                chunks.append(current)
+            current = top_header + line + "\n"
+        else:
+            current = candidate
+    if current.strip():
+        chunks.append(current)
+
+    # Append token-usage footer as its own trailing message if present.
+    usage_block = _format_token_usage(output.date)
+    if usage_block:
+        chunks.append(usage_block)
+
+    for chunk in chunks:
+        err = _send_webhook(chunk[:DISCORD_CHAR_LIMIT], stats)
+        if err:
+            errors.append(err)
+
+    total = stats["posted"] + stats["retried"] + stats["dropped"]
+    summary = (
+        f"posted {stats['posted']}/{total} messages, "
+        f"{stats['retried']} retried, {stats['dropped']} dropped"
+    )
+    if errors:
+        return f"⚠️ Discord partial ({summary}): {'; '.join(errors)}"
+    return f"✅ Discord: {summary}"
+
+
+def _write_markdown_condensed(output: AnalystOutput) -> str:
+    """Markdown report when per-lead ad generation is off. Mirrors the
+    condensed Discord post: header, top 10 leads, token usage."""
+    os.makedirs("reports", exist_ok=True)
+    filename = f"reports/{output.date}.md"
+    sources = _collect_sources(output)
+
+    try:
+        with open(filename, "w") as f:
+            f.write(f"# Norman Ad Scout Report — {output.date}\n\n")
+            f.write(
+                "**Mode:** USE_PER_LEAD_ADS=0 "
+                "(per-lead ad generation disabled; weekly synthesis runs Monday)\n\n"
+            )
+            f.write(f"**Customer-voice leads:** {output.total_leads}\n")
+            f.write(
+                f"**Sources:** {', '.join(sorted(sources)) if sources else 'none'}\n\n---\n\n"
+            )
+
+            f.write("## Top 10 Leads by Score\n\n")
+            top_10 = _top_n_by_score(output, 10)
+            if not top_10:
+                f.write("No qualifying leads this run.\n\n")
+            for i, lead in enumerate(top_10, 1):
+                f.write(f"{i}. **[{lead.title}]({lead.url})**\n")
+                f.write(f"   - Score: {lead.score}/100\n")
+                f.write(f"   - Source type: {lead.source_type}\n")
+                f.write(f"   - Segment: {lead.segment}\n\n")
+
+            usage_block = _format_token_usage(output.date)
+            if usage_block:
+                f.write(usage_block)
+
+        return f"✅ written to {filename}"
+    except Exception as e:
+        return f"❌ markdown write failed: {e}"
+
+
+def _top_n_by_score(output: AnalystOutput, n: int) -> list[AnalystLead]:
+    """Flatten segments, dedupe by URL, return the top-N AnalystLeads by score."""
+    all_leads = sorted(
+        (l for seg_leads in output.segments.values() for l in seg_leads),
+        key=lambda l: l.score,
+        reverse=True,
+    )
+    seen: set[str] = set()
+    picked: list[AnalystLead] = []
+    for l in all_leads:
+        if l.url in seen:
+            continue
+        seen.add(l.url)
+        picked.append(l)
+        if len(picked) == n:
+            break
+    return picked
+
+
+# ---------------------------------------------------------------------------
+# Weekly synthesis delivery
+# ---------------------------------------------------------------------------
+
+def deliver_synthesis(synthesis_output: Optional[SynthesisOutput]) -> DeliveryStatus:
+    """Deliver a weekly SynthesisOutput to markdown + Discord.
+
+    Accepts None — when the synthesizer returns None (insufficient data or
+    parse failure), we post a single short skip notice to Discord and mark
+    the markdown field accordingly.
+    """
+    status = DeliveryStatus()
+
+    if synthesis_output is None:
+        status.synthesis_markdown = "⏸️  skipped (synthesizer returned None)"
+        status.synthesis_discord = _post_synthesis_skip_notice()
+        return status
+
+    status.synthesis_markdown = _write_synthesis_markdown(synthesis_output)
+    status.synthesis_discord = _post_synthesis_discord(synthesis_output)
+    return status
+
+
+def _post_synthesis_skip_notice() -> str:
+    if not DISCORD_WEBHOOK_URL:
+        return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
+    stats = {"posted": 0, "retried": 0, "dropped": 0}
+    msg = (
+        "📊 Norman Synthesis skipped — insufficient customer-voice data "
+        "in past 7 days. Next check: next Monday."
+    )
+    err = _send_webhook(msg, stats)
+    if err:
+        return f"⚠️ Discord drop: {err}"
+    return "✅ Discord: posted skip notice"
+
+
+def _write_synthesis_markdown(output: SynthesisOutput) -> str:
+    os.makedirs("reports/synthesis", exist_ok=True)
+    filename = f"reports/synthesis/{output.week_of}.md"
+    today = date.today().isoformat()
+
+    try:
+        with open(filename, "w") as f:
+            f.write(f"# Norman Weekly Synthesis — Week ending {today}\n\n")
+
+            f.write("## Summary\n\n")
+            f.write(f"{output.summary}\n\n")
+            f.write(f"Total customer_voice leads analyzed: {output.leads_analyzed}\n\n")
+            if output.sampled_note:
+                f.write(f"_{output.sampled_note}_\n\n")
+
+            f.write("## Themes\n\n")
+            for i, theme in enumerate(output.themes, 1):
+                f.write(
+                    f"### Theme {i} — {theme.name} "
+                    f"(urgency: {theme.urgency_score}/10)\n\n"
+                )
+                f.write(f"**Pain point:** {theme.pain_point}\n\n")
+                f.write(
+                    f"**Segment breakdown:** {_format_breakdown(theme.segment_breakdown)}\n\n"
+                )
+
+                if theme.representative_quotes:
+                    f.write("**Representative quotes:**\n\n")
+                    for q in theme.representative_quotes:
+                        f.write(f'> "{q.quote}" — [{q.segment}]({q.source_url})\n')
+                    f.write("\n")
+
+                if theme.creative_angles:
+                    f.write("**Creative angles:**\n\n")
+                    for j, angle in enumerate(theme.creative_angles, 1):
+                        f.write(f"{j}. **{angle.angle}**\n")
+                        f.write(f"   Hook: {angle.hook}\n")
+                        f.write(f"   Proof: {angle.proof_point}\n\n")
+
+            usage_block = _format_token_usage(today)
+            if usage_block:
+                f.write(usage_block)
+
+        return f"✅ written to {filename}"
+    except Exception as e:
+        return f"❌ synthesis markdown write failed: {e}"
+
+
+def _post_synthesis_discord(output: SynthesisOutput) -> str:
+    """Post synthesis to Discord. One intro message + one message per theme,
+    each chunked to the 2000-char limit."""
+    if not DISCORD_WEBHOOK_URL:
+        return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
+
+    stats = {"posted": 0, "retried": 0, "dropped": 0}
+    errors: list[str] = []
+    today = date.today().isoformat()
+
+    intro = (
+        f"📊 **Norman Synthesis — Week ending {today}**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{output.summary}\n"
+        f"Leads analyzed: **{output.leads_analyzed}**"
+    )
+    if output.sampled_note:
+        intro += f"\n_{output.sampled_note}_"
+
+    err = _send_webhook(intro[:DISCORD_CHAR_LIMIT], stats)
+    if err:
+        errors.append(f"intro: {err}")
+
+    for theme in output.themes:
+        msg = _format_theme_for_discord(theme, today)
+        err = _send_webhook(msg[:DISCORD_CHAR_LIMIT], stats)
+        if err:
+            errors.append(f"{theme.name}: {err}")
+
+    total = stats["posted"] + stats["retried"] + stats["dropped"]
+    summary = (
+        f"posted {stats['posted']}/{total} messages, "
+        f"{stats['retried']} retried, {stats['dropped']} dropped"
+    )
+    if errors:
+        return f"⚠️ Discord partial ({summary}): {'; '.join(errors)}"
+    return f"✅ Discord: {summary}"
+
+
+def _format_theme_for_discord(theme: ThemeOutput, today: str) -> str:
+    """Render one theme as a self-contained Discord message."""
+    lines = [
+        f"📊 **Norman Synthesis — Week ending {today}**",
+        f"**Theme:** {theme.name} (urgency {theme.urgency_score}/10)",
+        f"**Pain:** {theme.pain_point}",
+        f"**Segments:** {_format_breakdown(theme.segment_breakdown)}",
+    ]
+
+    # Spec: show top 2 quotes in Discord (full list lives in the markdown).
+    if theme.representative_quotes:
+        lines.append("**Top quotes:**")
+        for q in theme.representative_quotes[:2]:
+            lines.append(f'> "{q.quote}" — {q.segment}')
+
+    if theme.creative_angles:
+        lines.append("**Creative angles:**")
+        for angle in theme.creative_angles:
+            lines.append(f"• {angle.angle}: {angle.hook}")
+
+    return "\n".join(lines)
+
+
+def _format_breakdown(breakdown: dict[str, int]) -> str:
+    """Render {'golf': 5, 'sensitivity': 12} as 'golf (5), sensitivity (12)'.
+    Orders by count descending so the dominant segment leads."""
+    if not breakdown:
+        return "—"
+    items = sorted(breakdown.items(), key=lambda kv: kv[1], reverse=True)
+    return ", ".join(f"{seg} ({n})" for seg, n in items)
 
 
 # ---------------------------------------------------------------------------

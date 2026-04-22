@@ -16,6 +16,14 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 # --- Semantic scoring toggle (A/B vs keyword scoring) ---
 USE_SEMANTIC_SCORING = os.getenv("USE_SEMANTIC_SCORING", "0") == "1"
 
+# --- Per-lead ad generation toggle ---
+# When off (default, "0"), the orchestrator skips the Analyst stage entirely:
+# customer_voice leads are saved with strategy='' and Discord/markdown fall
+# back to a condensed daily summary. Weekly synthesis (synthesizer.py) is the
+# primary creative output. Set to "1" to restore the per-lead ad-copy path
+# as an A/B fallback.
+USE_PER_LEAD_ADS = os.getenv("USE_PER_LEAD_ADS", "0") == "1"
+
 # --- Scoring ---
 SCORE_THRESHOLD = 30
 

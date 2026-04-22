@@ -11,7 +11,8 @@ from norman.analyst import run_analyst, primary_segment
 from norman.classifier import classify_source_type
 from norman.delivery import run_delivery
 from norman.db import init_db, get_seen_urls, save_lead
-from norman.config import SCORE_THRESHOLD
+from norman.config import SCORE_THRESHOLD, SEGMENTS, USE_PER_LEAD_ADS
+from norman.models import AnalystOutput
 
 
 def run_pipeline():
@@ -85,61 +86,53 @@ def run_pipeline():
         f"competitor_intel (stored only): {len(competitor_intel_leads)}"
     )
 
-    # --- Step 3: Dispatch Analyst on customer-voice leads only ---
-    print("🧠 Running Analyst...")
-    try:
-        analyst_output = run_analyst(customer_voice_leads)
-        print(f"  ✅ Analyst enriched {analyst_output.total_leads} leads")
-    except Exception as e:
-        print(f"  ❌ Analyst failed: {e}")
-        print("  ⚠️ Falling back to raw leads for delivery")
-        # Fallback: create minimal analyst output from raw leads
-        from norman.models import AnalystOutput, AnalystLead
-        fallback_leads = [
-            AnalystLead(
-                url=l.url, title=l.title, score=l.score, keywords=l.keywords,
-                source=l.source, platform=l.platform, geo=l.geo, snippet=l.snippet,
-                source_type=l.source_type,
-            )
-            for l in customer_voice_leads
-        ]
-        analyst_output = AnalystOutput(
-            date=today,
-            total_leads=len(customer_voice_leads),
-            segments={"general": fallback_leads},
-            top_3=fallback_leads[:3],
-        )
-
-    # --- Save all leads (both kinds) to DB and tally new/updated/revisited ---
-    # Build URL → {segment: AnalystLead} lookup so each customer_voice URL
-    # can be paired with the AnalystLead that matches its primary segment.
-    url_to_analyst: dict[str, dict[str, AnalystLead]] = {}
-    for seg_leads in analyst_output.segments.values():
-        for al in seg_leads:
-            url_to_analyst.setdefault(al.url, {})[al.segment] = al
-
+    # --- Step 3: Dispatch Analyst (or skip if USE_PER_LEAD_ADS=0) ---
     save_counts = {"new": 0, "updated": 0, "revisited": 0}
 
-    for lead in customer_voice_leads:
-        seg_map = url_to_analyst.get(lead.url, {})
-        strategy_json = ""
-        if seg_map:
-            primary = primary_segment(lead)
-            analyst_lead = seg_map.get(primary) or next(iter(seg_map.values()))
-            try:
-                strategy_json = json.dumps({
-                    "segment": analyst_lead.segment,
-                    "problem_detected": analyst_lead.problem_detected,
-                    "why_we_win": analyst_lead.why_we_win,
-                    "ad_headline": analyst_lead.ad_headline,
-                    "ad_body": analyst_lead.ad_body,
-                    "placement_tip": analyst_lead.placement_tip,
-                }, ensure_ascii=False)
-            except (TypeError, ValueError) as e:
-                print(f"  ⚠️ strategy serialize failed for {lead.url}: {e}")
-                strategy_json = ""
-        status = save_lead(conn, lead, strategy=strategy_json)
-        save_counts[status] = save_counts.get(status, 0) + 1
+    if USE_PER_LEAD_ADS:
+        print("🧠 Running Analyst...")
+        try:
+            analyst_output = run_analyst(customer_voice_leads)
+            print(f"  ✅ Analyst enriched {analyst_output.total_leads} leads")
+        except Exception as e:
+            print(f"  ❌ Analyst failed: {e}")
+            print("  ⚠️ Falling back to raw leads for delivery")
+            analyst_output = _bypass_analyst_output(today, customer_voice_leads)
+
+        # Build URL → {segment: AnalystLead} lookup so each customer_voice URL
+        # can be paired with the AnalystLead that matches its primary segment.
+        url_to_analyst: dict[str, dict[str, AnalystLead]] = {}
+        for seg_leads in analyst_output.segments.values():
+            for al in seg_leads:
+                url_to_analyst.setdefault(al.url, {})[al.segment] = al
+
+        for lead in customer_voice_leads:
+            seg_map = url_to_analyst.get(lead.url, {})
+            strategy_json = ""
+            if seg_map:
+                primary = primary_segment(lead)
+                analyst_lead = seg_map.get(primary) or next(iter(seg_map.values()))
+                try:
+                    strategy_json = json.dumps({
+                        "segment": analyst_lead.segment,
+                        "problem_detected": analyst_lead.problem_detected,
+                        "why_we_win": analyst_lead.why_we_win,
+                        "ad_headline": analyst_lead.ad_headline,
+                        "ad_body": analyst_lead.ad_body,
+                        "placement_tip": analyst_lead.placement_tip,
+                    }, ensure_ascii=False)
+                except (TypeError, ValueError) as e:
+                    print(f"  ⚠️ strategy serialize failed for {lead.url}: {e}")
+                    strategy_json = ""
+            status = save_lead(conn, lead, strategy=strategy_json)
+            save_counts[status] = save_counts.get(status, 0) + 1
+    else:
+        print("🧠 Analyst: ⏸️  skipped (USE_PER_LEAD_ADS=0; synthesis runs weekly)")
+        analyst_output = _bypass_analyst_output(today, customer_voice_leads)
+
+        for lead in customer_voice_leads:
+            status = save_lead(conn, lead, strategy="")
+            save_counts[status] = save_counts.get(status, 0) + 1
 
     for lead in competitor_intel_leads:
         status = save_lead(conn, lead)
@@ -149,6 +142,7 @@ def run_pipeline():
     run_log = _build_run_log(
         today, scout_results, analyst_output, competitor_intel_leads,
         save_counts=save_counts,
+        per_lead_ads=USE_PER_LEAD_ADS,
     )
     print(run_log)
 
@@ -163,12 +157,52 @@ def run_pipeline():
     conn.close()
 
 
+def _bypass_analyst_output(today: str, customer_voice_leads: list[Lead]) -> AnalystOutput:
+    """Build an AnalystOutput that carries raw leads through to delivery
+    without generating ad copy. Used when USE_PER_LEAD_ADS=0 (default) and
+    as the fallback when an enabled analyst call crashes.
+    """
+    segments: dict[str, list[AnalystLead]] = {s: [] for s in SEGMENTS + ["general"]}
+    for lead in customer_voice_leads:
+        seg = primary_segment(lead)
+        segments.setdefault(seg, []).append(AnalystLead(
+            url=lead.url, title=lead.title, score=lead.score,
+            keywords=lead.keywords, source=lead.source, platform=lead.platform,
+            geo=lead.geo, snippet=lead.snippet, source_type=lead.source_type,
+            segment=seg,
+        ))
+    for seg in segments:
+        segments[seg].sort(key=lambda x: x.score, reverse=True)
+
+    all_leads = sorted(
+        (l for seg_leads in segments.values() for l in seg_leads),
+        key=lambda x: x.score, reverse=True,
+    )
+    seen: set[str] = set()
+    top_3: list[AnalystLead] = []
+    for l in all_leads:
+        if l.url in seen:
+            continue
+        seen.add(l.url)
+        top_3.append(l)
+        if len(top_3) == 3:
+            break
+
+    return AnalystOutput(
+        date=today,
+        total_leads=len(customer_voice_leads),
+        segments=segments,
+        top_3=top_3,
+    )
+
+
 def _build_run_log(
     today,
     scout_results,
     analyst_output,
     competitor_intel_leads: list[Lead] | None = None,
     save_counts: dict[str, int] | None = None,
+    per_lead_ads: bool = True,
 ) -> str:
     """Build the terminal-style run summary string. Printed locally and sent to Discord."""
     scout_statuses = []
@@ -206,6 +240,11 @@ def _build_run_log(
         f"{save_counts.get('revisited', 0)} revisited\n"
     )
 
+    if per_lead_ads:
+        analyst_line = f"Analyst: ✅ {analyst_output.total_leads} leads enriched\n"
+    else:
+        analyst_line = "Analyst: ⏸️  skipped (USE_PER_LEAD_ADS=0; synthesis runs weekly)\n"
+
     return (
         f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Norman Run Complete — {today}\n"
@@ -215,7 +254,7 @@ def _build_run_log(
         f"Competitor intel (not analyzed): {len(competitor_intel_leads)} "
         f"(retailer: {retailer_count}, editorial: {editorial_count})\n"
         f"Top lead: {top_str}\n"
-        f"Analyst: ✅ {analyst_output.total_leads} leads enriched\n"
+        f"{analyst_line}"
         f"{save_block}"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )

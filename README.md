@@ -24,9 +24,15 @@ re-scored without indefinite "seen once, dead forever" dedup.
 ## Running
 
 ```
-python run.py --once     # single run, exit
-python run.py            # run once, then daily at 9 AM via APScheduler
+python run.py                # Start scheduler (odd-date daily pipeline + Monday weekly synthesis at 9:15 AM)
+python run.py --run-now      # Run pipeline once, then start scheduler
+python run.py --once         # Run the daily pipeline once and exit
+python run.py --synthesize   # Run the weekly synthesis once and exit
 ```
+
+`--run-now` is mutually exclusive with `--once` and `--synthesize`. The
+daily pipeline runs only on odd calendar dates; weekly synthesis runs
+every Monday regardless of date.
 
 ## Required environment variables
 
@@ -38,6 +44,12 @@ the pipeline.
 - `VOYAGE_API_KEY` — semantic scoring embeddings
 - `USE_SEMANTIC_SCORING` — set to `1` to enable semantic scoring (falls back
   to legacy keyword scoring when unset or `0`)
+- `USE_PER_LEAD_ADS` — set to `1` to re-enable per-lead ad-copy generation
+  (Claude Sonnet call per customer-voice lead). Default is `0` (off). When
+  off, Norman skips the Analyst stage entirely, customer-voice leads are
+  saved to the DB with `strategy=''`, and Discord/markdown fall back to a
+  condensed daily summary (run log + top 10 leads, no ad copy). Weekly
+  synthesis (every Monday 9:15 AM) is the primary creative output.
 - `SERP_API_KEY` — Google, Bing, and Amazon scouts (shared SerpAPI quota)
 - `YOUTUBE_API_KEY` — YouTube scout
 - `DISCORD_WEBHOOK_URL` — Discord delivery
