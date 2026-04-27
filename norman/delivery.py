@@ -405,8 +405,17 @@ def _write_synthesis_markdown(output: SynthesisOutput) -> str:
 
                 if theme.representative_quotes:
                     f.write("**Representative quotes:**\n\n")
-                    for q in theme.representative_quotes:
-                        f.write(f'> "{q.quote}" — [{q.segment}]({q.source_url})\n')
+                    last = len(theme.representative_quotes) - 1
+                    for idx, q in enumerate(theme.representative_quotes):
+                        if q.quote:
+                            f.write(
+                                f'> "{q.quote}" — [{q.segment}]({q.source_url})\n'
+                            )
+                        else:
+                            f.write(f"> [{q.segment}]({q.source_url})\n")
+                        f.write(f"> *Summary: {q.summary}*\n")
+                        if idx != last:
+                            f.write(">\n")
                     f.write("\n")
 
                 if theme.creative_angles:
@@ -476,8 +485,17 @@ def _format_theme_for_discord(theme: ThemeOutput, today: str) -> str:
     # Spec: show top 2 quotes in Discord (full list lives in the markdown).
     if theme.representative_quotes:
         lines.append("**Top quotes:**")
-        for q in theme.representative_quotes[:2]:
-            lines.append(f'> "{q.quote}" — {q.segment}')
+        top = theme.representative_quotes[:2]
+        last = len(top) - 1
+        for idx, q in enumerate(top):
+            link = f"[{q.segment}](<{q.source_url}>)"
+            if q.quote:
+                lines.append(f'> "{q.quote}" — {link}')
+            else:
+                lines.append(f"> {link}")
+            lines.append(f"> _Summary: {q.summary}_")
+            if idx != last:
+                lines.append("")
 
     if theme.creative_angles:
         lines.append("**Creative angles:**")

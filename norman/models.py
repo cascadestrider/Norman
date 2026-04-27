@@ -56,7 +56,8 @@ class DeliveryStatus:
 
 @dataclass
 class RepresentativeQuote:
-    quote: str
+    quote: str       # verbatim excerpt; may be empty when no quotable text exists in the lead
+    summary: str     # synthesizer's observation about the lead in third-person clinical voice
     source_url: str
     segment: str
 

@@ -176,6 +176,8 @@ Instructions:
 - Never mention competitor brand names in any field.
 - Produce 3-5 themes total. No more, no fewer.
 - Each theme must have exactly 3-5 representative_quotes (short excerpts from the lead titles/snippets below) and exactly 3 creative_angles.
+- quote MUST be a literal excerpt copied directly from the lead's title text. Do not paraphrase. Do not summarize. Do not rewrite in third person. If the lead's title does not contain a quotable phrase that captures the pain (e.g., titles that read like "User experiencing X"), set quote to empty string "" and rely on the summary field alone.
+- summary describes what the lead is about in your own words. This is where you synthesize — the quote is where you cite. Both fields are required (quote may be empty; summary must be populated).
 - urgency_score is an integer 1-10 describing how pressing the underlying pain feels (10 = acute distress, 1 = nice-to-have curiosity).
 - segment_breakdown maps segment name to count of supporting leads for that theme.
 
@@ -193,7 +195,10 @@ Schema (use this exact shape; fill with real values):
       "segment_breakdown": {{"golf": 5, "sensitivity": 12}},
       "urgency_score": 7,
       "representative_quotes": [
-        {{"quote": "excerpt from a lead title or snippet", "source_url": "https://...", "segment": "golf"}}
+        {{"quote": "verbatim excerpt from the lead's title — must be literal text, no paraphrasing or rewording",
+          "summary": "what this lead is fundamentally about, in third-person clinical voice",
+          "source_url": "https://...",
+          "segment": "golf"}}
       ],
       "creative_angles": [
         {{"angle": "one-line creative direction", "hook": "headline-level hook", "proof_point": "what Torque Optics feature supports this"}}
@@ -301,6 +306,7 @@ def _to_synthesis_output(
         quotes = [
             RepresentativeQuote(
                 quote=str(q.get("quote", "")),
+                summary=str(q.get("summary", "")),
                 source_url=str(q.get("source_url", "")),
                 segment=str(q.get("segment", "general")),
             )
