@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 from urllib.parse import urlparse, urlunparse
 
+from norman.events import TournamentEvent
 from norman.models import Lead, ScoutResult
 
 
@@ -26,11 +28,20 @@ class BaseScout(ABC):
     source: str = "base"
 
     @abstractmethod
-    def run(self, seen_urls: set[str]) -> ScoutResult:
+    def run(
+        self,
+        seen_urls: set[str],
+        event_queries: Optional[list[str]] = None,
+        active_event: Optional[TournamentEvent] = None,
+    ) -> ScoutResult:
         """Execute the scout and return leads + errors.
 
         Args:
             seen_urls: URLs already visited in previous runs (for dedup).
+            event_queries: Optional event-specific search queries. Phase 1
+                scouts that don't consume them (everything except Reddit)
+                may ignore both this and active_event.
+            active_event: Optional active TournamentEvent during this run.
 
         Returns:
             ScoutResult with leads above threshold and any errors.

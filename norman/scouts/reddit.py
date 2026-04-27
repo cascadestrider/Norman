@@ -1,7 +1,9 @@
 import time
 from itertools import cycle
+from typing import Optional
 import requests
 from norman.scouts.base import BaseScout
+from norman.events import TournamentEvent
 from norman.models import Lead, ScoutResult
 from norman.scoring_v2 import score_lead
 from norman.query_selector import pick_queries
@@ -19,7 +21,12 @@ class RedditScout(BaseScout):
     name = "Reddit"
     source = "reddit"
 
-    def run(self, seen_urls: set[str]) -> ScoutResult:
+    def run(
+        self,
+        seen_urls: set[str],
+        event_queries: Optional[list[str]] = None,
+        active_event: Optional[TournamentEvent] = None,
+    ) -> ScoutResult:
         leads: list[Lead] = []
         errors: list[str] = []
         notes: list[str] = []
@@ -72,6 +79,34 @@ class RedditScout(BaseScout):
                 if lead and lead.score >= SCORE_THRESHOLD:
                     leads.append(lead)
             time.sleep(1)
+
+        # Mode 3: event search — only when an event window is active. Cycle
+        # event queries across subreddits the same way regular search does, so
+        # the call budget stays at one search per subreddit (~23 extra calls).
+        # Leads surfaced here get event_window=True; non-event modes don't,
+        # even if their content happens to mention the tournament.
+        if event_queries and active_event is not None:
+            event_cycle = cycle(event_queries)
+            event_call_count = 0
+            for sub in all_subs:
+                term = next(event_cycle)
+                post_urls = self._search_subreddit(sub, term, errors)
+                event_call_count += 1
+                for url in post_urls:
+                    if url in seen_urls or url in visited_this_run:
+                        continue
+                    visited_this_run.add(url)
+                    lead = self._process_post(url, errors)
+                    if lead and lead.score >= SCORE_THRESHOLD:
+                        lead.event_window = True
+                        lead.event_name = active_event.name
+                        leads.append(lead)
+                time.sleep(1)
+            notes.append(
+                f"Reddit event search: {len(event_queries)} queries cycled "
+                f"across {len(all_subs)} subs → {event_call_count} calls "
+                f"({active_event.name})"
+            )
 
         return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 

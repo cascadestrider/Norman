@@ -16,8 +16,14 @@ from typing import Optional
 
 import anthropic
 
-from norman.config import ANTHROPIC_API_KEY, PRODUCT_FOCUS
+from norman.config import (
+    ANTHROPIC_API_KEY,
+    EVENT_POST_DAYS,
+    EVENT_PRE_DAYS,
+    PRODUCT_FOCUS,
+)
 from norman.db import init_db
+from norman.events import TournamentEvent, events_in_range
 from norman.models import (
     CreativeAngle,
     RepresentativeQuote,
@@ -93,7 +99,12 @@ def run_weekly_synthesis() -> Optional[SynthesisOutput]:
     else:
         leads_for_prompt = leads
 
-    prompt = _build_prompt(week_of, leads_for_prompt)
+    events_overlapping = events_in_range(
+        window_start, today, EVENT_PRE_DAYS, EVENT_POST_DAYS
+    )
+    events_in_window = [_format_event_label(e) for e in events_overlapping]
+
+    prompt = _build_prompt(week_of, leads_for_prompt, events_in_window)
     data = _call_with_retry(prompt)
     if data is None:
         return None
@@ -104,10 +115,23 @@ def run_weekly_synthesis() -> Optional[SynthesisOutput]:
             fallback_week_of=week_of,
             leads_analyzed=len(leads_for_prompt),
             sampled_note=sampled_note,
+            events_in_window=events_in_window,
         )
     except Exception as e:
         print(f"synthesis output shaping failed: {e}")
         return None
+
+
+def _format_event_label(event: TournamentEvent) -> str:
+    """Render an event as 'PGA Championship (May 14-17)' for prompt + markdown."""
+    start = event.start_date
+    end = event.end_date
+    if start.month == end.month:
+        return f"{event.name} ({start.strftime('%b %d')}-{end.strftime('%d')})"
+    return (
+        f"{event.name} "
+        f"({start.strftime('%b %d')}-{end.strftime('%b %d')})"
+    )
 
 
 def _fetch_weekly_leads() -> list[tuple]:
@@ -152,14 +176,32 @@ def _lead_digest(row: tuple) -> dict:
     }
 
 
-def _build_prompt(week_of: str, leads: list[dict]) -> str:
+def _build_prompt(
+    week_of: str,
+    leads: list[dict],
+    events_in_window: Optional[list[str]] = None,
+) -> str:
     segments_block = "\n".join(
         f"- {seg}: {positioning}"
         for seg, positioning in SEGMENT_POSITIONING.items()
     )
     leads_json = json.dumps(leads, ensure_ascii=False)
 
-    return f"""You are the weekly synthesis analyst for Torque Optics.
+    if events_in_window:
+        event_context = (
+            f"Context: the data below covers a week that included activity "
+            f"around the following tournament(s): "
+            f"{', '.join(events_in_window)}. Some leads in this corpus may "
+            f"have been surfaced specifically by event-related queries "
+            f"(these will skew toward golf-segment pain-points connected to "
+            f"tournament viewing or play). When you cluster, consider "
+            f"whether a distinct tournament-related theme emerges; do not "
+            f"force one if the signal is thin.\n\n"
+        )
+    else:
+        event_context = ""
+
+    return f"""{event_context}You are the weekly synthesis analyst for Torque Optics.
 
 Product:
 {PRODUCT_FOCUS}
@@ -300,6 +342,7 @@ def _to_synthesis_output(
     fallback_week_of: str,
     leads_analyzed: int,
     sampled_note: Optional[str],
+    events_in_window: Optional[list[str]] = None,
 ) -> SynthesisOutput:
     themes: list[ThemeOutput] = []
     for t in data.get("themes", []) or []:
@@ -340,6 +383,7 @@ def _to_synthesis_output(
         summary=str(data.get("summary", "")),
         themes=themes,
         sampled_note=sampled_note,
+        events_in_window=events_in_window or [],
     )
 
 

@@ -14,6 +14,8 @@ class Lead:
     geo: Optional[str] = None
     snippet: str = ""
     source_type: str = "unknown"  # customer_voice | retailer | editorial_roundup | unknown
+    event_name: str = ""          # set when surfaced by event-specific querying
+    event_window: bool = False    # True when this lead came from an event-search pass
 
 
 @dataclass
@@ -88,3 +90,7 @@ class SynthesisOutput:
     # Set when the synthesizer sampled a subset of the weekly corpus because
     # the total exceeded the budget cap. None when the full corpus was used.
     sampled_note: Optional[str] = None
+    # Pre-formatted event labels (e.g. "PGA Championship (May 14-17)") for
+    # tournaments whose windows overlapped the synthesis period. Empty when
+    # no events overlapped.
+    events_in_window: list[str] = field(default_factory=list)

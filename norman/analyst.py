@@ -118,6 +118,8 @@ def run_analyst(leads: list[Lead]) -> AnalystOutput:
                 platform=lead.platform,
                 geo=lead.geo,
                 snippet=lead.snippet,
+                event_name=lead.event_name,
+                event_window=lead.event_window,
                 segment=seg,
                 problem_detected=ad_data.get("problem_detected", ""),
                 why_we_win=ad_data.get("why_we_win", ""),

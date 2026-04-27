@@ -24,6 +24,13 @@ USE_SEMANTIC_SCORING = os.getenv("USE_SEMANTIC_SCORING", "0") == "1"
 # as an A/B fallback.
 USE_PER_LEAD_ADS = os.getenv("USE_PER_LEAD_ADS", "0") == "1"
 
+# --- Event monitoring (Phase 1: Reddit-only) ---
+# Surfaces tournament-window leads via the event_window flag without
+# modifying score. Disable by setting EVENT_MONITORING_ENABLED=0.
+EVENT_MONITORING_ENABLED = os.getenv("EVENT_MONITORING_ENABLED", "1") == "1"
+EVENT_PRE_DAYS = int(os.getenv("EVENT_PRE_DAYS", "3"))
+EVENT_POST_DAYS = int(os.getenv("EVENT_POST_DAYS", "2"))
+
 # --- Scoring ---
 SCORE_THRESHOLD = 30
 

@@ -3,6 +3,7 @@
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
+from typing import Optional
 
 from norman.models import Lead, AnalystLead, ScoutResult
 from norman.scouts import ALL_SCOUTS
@@ -11,7 +12,15 @@ from norman.analyst import run_analyst, primary_segment
 from norman.classifier import classify_source_type
 from norman.delivery import run_delivery
 from norman.db import init_db, get_seen_urls, save_lead
-from norman.config import SCORE_THRESHOLD, SEGMENTS, USE_PER_LEAD_ADS
+from norman.config import (
+    SCORE_THRESHOLD,
+    SEGMENTS,
+    USE_PER_LEAD_ADS,
+    EVENT_MONITORING_ENABLED,
+    EVENT_PRE_DAYS,
+    EVENT_POST_DAYS,
+)
+from norman.events import TournamentEvent, active_event_window, event_query_combos
 from norman.models import AnalystOutput
 
 
@@ -25,16 +34,45 @@ def run_pipeline():
     seen_urls = get_seen_urls(conn)
     print(f"📦 {len(seen_urls)} previously seen URLs loaded")
 
+    # --- Event window check (Phase 1: Reddit-only consumer) ---
+    active_event: Optional[TournamentEvent] = None
+    event_queries: list[str] = []
+    if EVENT_MONITORING_ENABLED:
+        try:
+            active_event = active_event_window(
+                date.today(), EVENT_PRE_DAYS, EVENT_POST_DAYS
+            )
+            if active_event:
+                event_queries = event_query_combos(active_event)
+        except Exception as e:
+            print(f"⚠️  Event window check failed: {e}")
+            active_event = None
+            event_queries = []
+
+    if active_event:
+        print(
+            f"🏌️  Event window active: {active_event.name} "
+            f"({active_event.start_date}–{active_event.end_date})\n"
+            f"    Adding {len(event_queries)} event queries to Reddit scout"
+        )
+
     # --- Step 1: Dispatch all scouts in parallel ---
     scouts: list[BaseScout] = [ScoutClass() for ScoutClass in ALL_SCOUTS]
     scout_results: dict[str, ScoutResult] = {}
 
     print(f"🔍 Dispatching {len(scouts)} scouts in parallel...")
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {
-            executor.submit(scout.run, seen_urls): scout.name
-            for scout in scouts
-        }
+        futures = {}
+        for scout in scouts:
+            if scout.source == "reddit":
+                fut = executor.submit(
+                    scout.run, seen_urls,
+                    event_queries=event_queries,
+                    active_event=active_event,
+                )
+            else:
+                fut = executor.submit(scout.run, seen_urls)
+            futures[fut] = scout.name
         for future in as_completed(futures):
             scout_name = futures[future]
             try:
@@ -65,6 +103,10 @@ def run_pipeline():
                 all_leads.append(lead)
 
     print(f"\n📊 {len(all_leads)} qualifying leads after dedup (threshold: {SCORE_THRESHOLD})")
+
+    event_lead_count = sum(1 for lead in all_leads if lead.event_window)
+    if active_event:
+        print(f"   🏌️  {event_lead_count} leads flagged from event queries")
 
     # --- Step 2.5: Classify source type, split customer voice vs competitor intel ---
     print(f"🏷️  Classifying source type for {len(all_leads)} leads...")
@@ -143,12 +185,16 @@ def run_pipeline():
         today, scout_results, analyst_output, competitor_intel_leads,
         save_counts=save_counts,
         per_lead_ads=USE_PER_LEAD_ADS,
+        active_event=active_event,
+        event_lead_count=event_lead_count,
     )
     print(run_log)
 
     # --- Step 5: Dispatch Delivery ---
     print("📬 Running Delivery...")
-    delivery_status = run_delivery(analyst_output, run_log=run_log)
+    delivery_status = run_delivery(
+        analyst_output, run_log=run_log, active_event=active_event,
+    )
     print(f"  Markdown:  {delivery_status.markdown}")
     print(f"  Discord:   {delivery_status.discord}")
     print(f"  Klaviyo:   {delivery_status.klaviyo}")
@@ -169,6 +215,7 @@ def _bypass_analyst_output(today: str, customer_voice_leads: list[Lead]) -> Anal
             url=lead.url, title=lead.title, score=lead.score,
             keywords=lead.keywords, source=lead.source, platform=lead.platform,
             geo=lead.geo, snippet=lead.snippet, source_type=lead.source_type,
+            event_name=lead.event_name, event_window=lead.event_window,
             segment=seg,
         ))
     for seg in segments:
@@ -203,6 +250,8 @@ def _build_run_log(
     competitor_intel_leads: list[Lead] | None = None,
     save_counts: dict[str, int] | None = None,
     per_lead_ads: bool = True,
+    active_event: Optional[TournamentEvent] = None,
+    event_lead_count: int = 0,
 ) -> str:
     """Build the terminal-style run summary string. Printed locally and sent to Discord."""
     scout_statuses = []
@@ -245,11 +294,22 @@ def _build_run_log(
     else:
         analyst_line = "Analyst: ⏸️  skipped (USE_PER_LEAD_ADS=0; synthesis runs weekly)\n"
 
+    if active_event:
+        event_line = (
+            f"🏌️  Event window: {active_event.name} "
+            f"({active_event.start_date.strftime('%m-%d')}–"
+            f"{active_event.end_date.strftime('%m-%d')}) — "
+            f"{event_lead_count} event-flagged leads\n"
+        )
+    else:
+        event_line = ""
+
     return (
         f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Norman Run Complete — {today}\n"
         f"Scouts: {' | '.join(scout_statuses)}\n"
         f"{rotation_block}"
+        f"{event_line}"
         f"Customer-voice leads: {analyst_output.total_leads} across {sources_with_leads} sources\n"
         f"Competitor intel (not analyzed): {len(competitor_intel_leads)} "
         f"(retailer: {retailer_count}, editorial: {editorial_count})\n"

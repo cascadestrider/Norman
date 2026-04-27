@@ -5,6 +5,7 @@ from typing import Optional
 
 import requests
 
+from norman.events import TournamentEvent
 from norman.models import (
     AnalystOutput,
     AnalystLead,
@@ -29,11 +30,40 @@ SEGMENT_ICONS = {
 SEGMENT_ORDER = ["fishing", "golf", "motorcycle", "commuter", "general"]
 
 
+def _count_event_leads(output: AnalystOutput) -> int:
+    """Count distinct event-flagged leads across all segment buckets."""
+    seen: set[str] = set()
+    count = 0
+    for seg_leads in output.segments.values():
+        for lead in seg_leads:
+            if lead.url in seen:
+                continue
+            seen.add(lead.url)
+            if lead.event_window:
+                count += 1
+    return count
+
+
+def _event_window_block(
+    active_event: Optional[TournamentEvent], n_event_leads: int
+) -> str:
+    """Render the event-window banner. Empty string when no event is active."""
+    if not active_event:
+        return ""
+    return (
+        f"🏌️ **Event Window: {active_event.name}** "
+        f"({active_event.start_date.strftime('%m-%d')}–"
+        f"{active_event.end_date.strftime('%m-%d')} ± buffer)\n"
+        f"_{n_event_leads} event-flagged leads in today's run._\n"
+    )
+
+
 def run_delivery(
     analyst_output: AnalystOutput,
     run_log: str = "",
     klaviyo_configured: bool = False,
     dashboard_configured: bool = False,
+    active_event: Optional[TournamentEvent] = None,
 ) -> DeliveryStatus:
     """Deliver analyst results to all configured channels.
 
@@ -44,11 +74,11 @@ def run_delivery(
     status = DeliveryStatus()
 
     if USE_PER_LEAD_ADS:
-        status.markdown = _write_markdown_report(analyst_output)
-        status.discord = _post_discord(analyst_output, run_log)
+        status.markdown = _write_markdown_report(analyst_output, active_event)
+        status.discord = _post_discord(analyst_output, run_log, active_event)
     else:
-        status.markdown = _write_markdown_condensed(analyst_output)
-        status.discord = _post_discord_condensed(analyst_output, run_log)
+        status.markdown = _write_markdown_condensed(analyst_output, active_event)
+        status.discord = _post_discord_condensed(analyst_output, run_log, active_event)
 
     status.klaviyo = (
         "⚠️ Klaviyo integration not yet implemented"
@@ -68,7 +98,11 @@ def run_delivery(
 # Discord
 # ---------------------------------------------------------------------------
 
-def _post_discord(output: AnalystOutput, run_log: str) -> str:
+def _post_discord(
+    output: AnalystOutput,
+    run_log: str,
+    active_event: Optional[TournamentEvent] = None,
+) -> str:
     if not DISCORD_WEBHOOK_URL:
         return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
 
@@ -78,9 +112,11 @@ def _post_discord(output: AnalystOutput, run_log: str) -> str:
     if output.total_leads == 0:
         # Single combined message when there's nothing to report
         sources_ran = _sources_ran(output)
+        event_block = _event_window_block(active_event, 0)
         msg = (
             f"📡 **Norman Daily Run — {output.date}**\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{event_block}"
             f"No new leads found today. All discovered URLs were previously visited "
             f"or scored below threshold.\n"
             f"Scouts ran: {sources_ran}\n"
@@ -92,7 +128,7 @@ def _post_discord(output: AnalystOutput, run_log: str) -> str:
             errors.append(err)
     else:
         # Message 1 — Pipeline Run Log
-        err = _post_run_log(output, run_log, stats)
+        err = _post_run_log(output, run_log, stats, active_event)
         if err:
             errors.append(f"Run log: {err}")
 
@@ -110,7 +146,12 @@ def _post_discord(output: AnalystOutput, run_log: str) -> str:
     return f"✅ Discord: {summary}"
 
 
-def _post_run_log(output: AnalystOutput, run_log: str, stats: dict) -> str | None:
+def _post_run_log(
+    output: AnalystOutput,
+    run_log: str,
+    stats: dict,
+    active_event: Optional[TournamentEvent] = None,
+) -> str | None:
     """Post Message 1: the pipeline run log block."""
     sources = sorted(_collect_sources(output))
     seg_counts = {seg: len(leads) for seg, leads in output.segments.items() if leads}
@@ -121,16 +162,19 @@ def _post_run_log(output: AnalystOutput, run_log: str, stats: dict) -> str | Non
 
     top_lines = []
     for i, lead in enumerate(output.top_3, 1):
+        badge = "🏆 " if lead.event_window else ""
         top_lines.append(
-            f"{i}. **[{lead.title[:80]}]({lead.url})**\n"
+            f"{i}. {badge}**[{lead.title[:80]}]({lead.url})**\n"
             f"   Score: {lead.score}/100 | {lead.segment} | {lead.source}\n"
             f"   > {lead.problem_detected}\n"
             f"   > 📣 _{lead.ad_headline}_"
         )
 
+    event_block = _event_window_block(active_event, _count_event_leads(output))
     msg = (
         f"📡 **Norman Daily Run — {output.date}**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{event_block}"
         f"Total leads: **{output.total_leads}** across {', '.join(sources)}\n\n"
         f"🏆 **Top Leads Today:**\n\n"
         + "\n\n".join(top_lines)
@@ -218,7 +262,11 @@ def _format_lead_block(lead: AnalystLead) -> str:
 # Condensed daily summary (USE_PER_LEAD_ADS=0)
 # ---------------------------------------------------------------------------
 
-def _post_discord_condensed(output: AnalystOutput, run_log: str) -> str:
+def _post_discord_condensed(
+    output: AnalystOutput,
+    run_log: str,
+    active_event: Optional[TournamentEvent] = None,
+) -> str:
     """Discord delivery when per-lead ad generation is off. Posts the run
     log plus the top 10 leads by score, no ad copy, no per-segment blocks.
     """
@@ -231,9 +279,11 @@ def _post_discord_condensed(output: AnalystOutput, run_log: str) -> str:
     sources = sorted(_collect_sources(output))
     top_10 = _top_n_by_score(output, 10)
 
+    event_block = _event_window_block(active_event, _count_event_leads(output))
     header = (
         f"📡 **Norman Daily Run — {output.date}**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{event_block}"
         f"Customer-voice leads: **{output.total_leads}** across "
         f"{', '.join(sources) if sources else 'no sources'}\n"
         f"_Daily signal only; creative themes posted every Monday._\n"
@@ -244,8 +294,9 @@ def _post_discord_condensed(output: AnalystOutput, run_log: str) -> str:
     top_header = "\n🏆 **Top 10 Leads by Score**\n\n" if top_10 else ""
     top_lines: list[str] = []
     for i, lead in enumerate(top_10, 1):
+        badge = "🏆 " if lead.event_window else ""
         top_lines.append(
-            f"{i}. **[{lead.title[:80]}]({lead.url})**\n"
+            f"{i}. {badge}**[{lead.title[:80]}]({lead.url})**\n"
             f"   Score {lead.score} | {lead.source_type} | {lead.segment}"
         )
 
@@ -283,7 +334,10 @@ def _post_discord_condensed(output: AnalystOutput, run_log: str) -> str:
     return f"✅ Discord: {summary}"
 
 
-def _write_markdown_condensed(output: AnalystOutput) -> str:
+def _write_markdown_condensed(
+    output: AnalystOutput,
+    active_event: Optional[TournamentEvent] = None,
+) -> str:
     """Markdown report when per-lead ad generation is off. Mirrors the
     condensed Discord post: header, top 10 leads, token usage."""
     os.makedirs("reports", exist_ok=True)
@@ -293,6 +347,11 @@ def _write_markdown_condensed(output: AnalystOutput) -> str:
     try:
         with open(filename, "w") as f:
             f.write(f"# Norman Ad Scout Report — {output.date}\n\n")
+            event_block = _event_window_block(
+                active_event, _count_event_leads(output)
+            )
+            if event_block:
+                f.write(event_block + "\n")
             f.write(
                 "**Mode:** USE_PER_LEAD_ADS=0 "
                 "(per-lead ad generation disabled; weekly synthesis runs Monday)\n\n"
@@ -307,7 +366,8 @@ def _write_markdown_condensed(output: AnalystOutput) -> str:
             if not top_10:
                 f.write("No qualifying leads this run.\n\n")
             for i, lead in enumerate(top_10, 1):
-                f.write(f"{i}. **[{lead.title}]({lead.url})**\n")
+                badge = "🏆 " if lead.event_window else ""
+                f.write(f"{i}. {badge}**[{lead.title}]({lead.url})**\n")
                 f.write(f"   - Score: {lead.score}/100\n")
                 f.write(f"   - Source type: {lead.source_type}\n")
                 f.write(f"   - Segment: {lead.segment}\n\n")
@@ -385,6 +445,11 @@ def _write_synthesis_markdown(output: SynthesisOutput) -> str:
     try:
         with open(filename, "w") as f:
             f.write(f"# Norman Weekly Synthesis — Week ending {today}\n\n")
+            if output.events_in_window:
+                f.write(
+                    f"_Tournament context: "
+                    f"{', '.join(output.events_in_window)}_\n\n"
+                )
 
             f.write("## Summary\n\n")
             f.write(f"{output.summary}\n\n")
@@ -518,7 +583,10 @@ def _format_breakdown(breakdown: dict[str, int]) -> str:
 # Markdown report
 # ---------------------------------------------------------------------------
 
-def _write_markdown_report(output: AnalystOutput) -> str:
+def _write_markdown_report(
+    output: AnalystOutput,
+    active_event: Optional[TournamentEvent] = None,
+) -> str:
     os.makedirs("reports", exist_ok=True)
     filename = f"reports/{output.date}.md"
 
@@ -527,6 +595,11 @@ def _write_markdown_report(output: AnalystOutput) -> str:
     try:
         with open(filename, "w") as f:
             f.write(f"# Norman Ad Scout Report — {output.date}\n\n")
+            event_block = _event_window_block(
+                active_event, _count_event_leads(output)
+            )
+            if event_block:
+                f.write(event_block + "\n")
 
             if output.total_leads == 0:
                 f.write("**Status:** Scout ran successfully — no new leads found today.\n\n")
@@ -545,7 +618,8 @@ def _write_markdown_report(output: AnalystOutput) -> str:
                         continue
 
                     for lead in seg_leads:
-                        f.write(f"### [{lead.title}]({lead.url})\n")
+                        badge = "🏆 " if lead.event_window else ""
+                        f.write(f"### {badge}[{lead.title}]({lead.url})\n")
                         f.write(f"**Source:** {lead.source.upper()} | **Score:** {lead.score}/100\n\n")
                         f.write(f"**Problem:** {lead.problem_detected}\n")
                         f.write(f"**Why We Win:** {lead.why_we_win}\n")
