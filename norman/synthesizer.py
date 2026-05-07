@@ -139,7 +139,8 @@ def _fetch_weekly_leads() -> list[tuple]:
     try:
         return conn.execute(
             """
-            SELECT url, title, score, source, source_type, strategy
+            SELECT url, title, score, source, source_type, strategy,
+                   event_name, event_window
             FROM leads
             WHERE source_type = 'customer_voice'
               AND last_seen >= date('now', '-7 days')
@@ -151,7 +152,7 @@ def _fetch_weekly_leads() -> list[tuple]:
 
 
 def _lead_digest(row: tuple) -> dict:
-    url, title, score, source, _source_type, strategy = row
+    url, title, score, source, _source_type, strategy, event_name, event_window = row
     segment = "general"
     snippet = ""
     if strategy:
@@ -166,7 +167,7 @@ def _lead_digest(row: tuple) -> dict:
         except (json.JSONDecodeError, TypeError):
             pass
     title_trimmed = (title or "")[:150]
-    return {
+    digest = {
         "url": url,
         "title": title_trimmed,
         "score": score,
@@ -174,6 +175,9 @@ def _lead_digest(row: tuple) -> dict:
         "segment": segment,
         "snippet": snippet or title_trimmed,
     }
+    if event_window and event_name:
+        digest["event_flagged"] = f"True (during {event_name})"
+    return digest
 
 
 def _build_prompt(

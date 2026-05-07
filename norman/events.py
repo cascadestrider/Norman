@@ -168,17 +168,20 @@ def events_in_range(
     return out
 
 
+# Hashtag-based queries (#EventName + pain) were removed for Phase 1.5
+# because hashtags rarely appear in Reddit thread titles. When X scout
+# activates in Phase 2, restore hashtag queries via a parallel
+# event_query_combos_x() function or conditional logic.
 def event_query_combos(event: TournamentEvent) -> list[str]:
     """Generate 6-10 search queries that cross event identifiers with pain anchors.
 
     Skips sponsorship/marketing-skewed combos in favor of phrasings most likely
     to surface customer-voice content (forum posts, Reddit threads, complaints).
     """
-    primary_tag = event.hashtags[0] if event.hashtags else f"#{event.short_name}"
     return [
-        f"{primary_tag} sunglasses glare",
-        f"{primary_tag} polarized",
-        f"{primary_tag} eye strain",
+        "tournament weekend golf sunglasses",
+        "golf weekend polarized lenses",
+        "watching golf TV eye strain",
         f"{event.venue} polarized",
         f"{event.name} sunglasses recommendation",
         f"{event.name} golf vision",

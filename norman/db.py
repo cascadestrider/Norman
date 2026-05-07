@@ -10,22 +10,26 @@ def init_db(path: str = "scout_log.db") -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS leads (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            url         TEXT UNIQUE,
-            title       TEXT,
-            score       INTEGER,
-            keywords    TEXT,
-            strategy    TEXT,
-            source      TEXT,
-            source_type TEXT,
-            date_found  TEXT,
-            last_seen   TEXT
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            url          TEXT UNIQUE,
+            title        TEXT,
+            score        INTEGER,
+            keywords     TEXT,
+            strategy     TEXT,
+            source       TEXT,
+            source_type  TEXT,
+            date_found   TEXT,
+            last_seen    TEXT,
+            event_name   TEXT DEFAULT '',
+            event_window INTEGER DEFAULT 0
         )
     """)
     for sql in (
         "ALTER TABLE leads ADD COLUMN source TEXT",
         "ALTER TABLE leads ADD COLUMN source_type TEXT",
         "ALTER TABLE leads ADD COLUMN last_seen TEXT",
+        "ALTER TABLE leads ADD COLUMN event_name TEXT DEFAULT ''",
+        "ALTER TABLE leads ADD COLUMN event_window INTEGER DEFAULT 0",
     ):
         try:
             conn.execute(sql)
@@ -66,8 +70,8 @@ def save_lead(conn: sqlite3.Connection, lead: Lead, strategy: str = "") -> str:
         conn.execute(
             """INSERT INTO leads
                (url, title, score, keywords, strategy, source, source_type,
-                date_found, last_seen)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                date_found, last_seen, event_name, event_window)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 lead.url,
                 lead.title,
@@ -78,6 +82,8 @@ def save_lead(conn: sqlite3.Connection, lead: Lead, strategy: str = "") -> str:
                 lead.source_type,
                 today,
                 today,
+                lead.event_name,
+                1 if lead.event_window else 0,
             ),
         )
         conn.commit()
@@ -87,16 +93,27 @@ def save_lead(conn: sqlite3.Connection, lead: Lead, strategy: str = "") -> str:
     if lead.score > old_score + SCORE_BUMP_THRESHOLD:
         conn.execute(
             """UPDATE leads
-               SET last_seen = ?, score = ?, title = ?, source_type = ?
+               SET last_seen = ?, score = ?, title = ?, source_type = ?,
+                   event_name = ?, event_window = ?
                WHERE url = ?""",
-            (today, lead.score, lead.title, lead.source_type, lead.url),
+            (
+                today,
+                lead.score,
+                lead.title,
+                lead.source_type,
+                lead.event_name,
+                1 if lead.event_window else 0,
+                lead.url,
+            ),
         )
         conn.commit()
         return "updated"
 
     conn.execute(
-        "UPDATE leads SET last_seen = ? WHERE url = ?",
-        (today, lead.url),
+        """UPDATE leads
+           SET last_seen = ?, event_name = ?, event_window = ?
+           WHERE url = ?""",
+        (today, lead.event_name, 1 if lead.event_window else 0, lead.url),
     )
     conn.commit()
     return "revisited"
