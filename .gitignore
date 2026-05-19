@@ -13,7 +13,7 @@ venv/
 
 # SQLite databases
 *.db
-*.db.backup
+*.db.backup*
 *_frozen.db
 
 # Python cache
