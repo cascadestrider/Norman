@@ -112,12 +112,15 @@ def run_pipeline():
     print(f"🏷️  Classifying source type for {len(all_leads)} leads...")
     customer_voice_leads: list[Lead] = []
     competitor_intel_leads: list[Lead] = []
+    off_topic_leads: list[Lead] = []
     for lead in all_leads:
         lead.source_type = classify_source_type(lead.title, lead.snippet, lead.url)
         if lead.source_type == "customer_voice":
             customer_voice_leads.append(lead)
         elif lead.source_type in ("retailer", "editorial_roundup"):
             competitor_intel_leads.append(lead)
+        elif lead.source_type == "off_topic":
+            off_topic_leads.append(lead)
         else:
             # Treat unknown as customer_voice to stay conservative — the
             # analyst can still flag them. Switch to competitor_intel if
@@ -125,7 +128,8 @@ def run_pipeline():
             customer_voice_leads.append(lead)
     print(
         f"  customer_voice (→ analyst): {len(customer_voice_leads)} | "
-        f"competitor_intel (stored only): {len(competitor_intel_leads)}"
+        f"competitor_intel (stored only): {len(competitor_intel_leads)} | "
+        f"off_topic (stored only): {len(off_topic_leads)}"
     )
 
     # --- Step 3: Dispatch Analyst (or skip if USE_PER_LEAD_ADS=0) ---
@@ -180,9 +184,14 @@ def run_pipeline():
         status = save_lead(conn, lead)
         save_counts[status] = save_counts.get(status, 0) + 1
 
+    for lead in off_topic_leads:
+        status = save_lead(conn, lead)
+        save_counts[status] = save_counts.get(status, 0) + 1
+
     # --- Step 4: Build run log (printed to terminal + passed to Delivery) ---
     run_log = _build_run_log(
         today, scout_results, analyst_output, competitor_intel_leads,
+        off_topic_leads=off_topic_leads,
         save_counts=save_counts,
         per_lead_ads=USE_PER_LEAD_ADS,
         active_event=active_event,
@@ -248,6 +257,7 @@ def _build_run_log(
     scout_results,
     analyst_output,
     competitor_intel_leads: list[Lead] | None = None,
+    off_topic_leads: list[Lead] | None = None,
     save_counts: dict[str, int] | None = None,
     per_lead_ads: bool = True,
     active_event: Optional[TournamentEvent] = None,
@@ -272,6 +282,8 @@ def _build_run_log(
     editorial_count = sum(
         1 for l in competitor_intel_leads if l.source_type == "editorial_roundup"
     )
+    off_topic_leads = off_topic_leads or []
+    off_topic_count = len(off_topic_leads)
 
     rotation_lines = [
         note for r in scout_results.values() for note in r.notes
@@ -313,6 +325,7 @@ def _build_run_log(
         f"Customer-voice leads: {analyst_output.total_leads} across {sources_with_leads} sources\n"
         f"Competitor intel (not analyzed): {len(competitor_intel_leads)} "
         f"(retailer: {retailer_count}, editorial: {editorial_count})\n"
+        f"Off-topic (not analyzed): {off_topic_count}\n"
         f"Top lead: {top_str}\n"
         f"{analyst_line}"
         f"{save_block}"
