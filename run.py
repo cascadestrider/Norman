@@ -15,6 +15,7 @@ See docs/launchd-setup.md (future).
 """
 import sys
 from datetime import date, timedelta
+from typing import Optional
 
 from norman.orchestrator import run_pipeline
 from norman.synthesizer import run_weekly_synthesis
@@ -27,9 +28,19 @@ from norman.events import EVENTS_2026
 _ODD_DAYS = ",".join(str(d) for d in range(1, 32, 2))
 
 
-def run_synthesis():
-    """Run the weekly synthesis pipeline and deliver to markdown + Discord."""
-    output = run_weekly_synthesis()
+def run_synthesis(
+    window_start: Optional[date] = None,
+    window_end: Optional[date] = None,
+):
+    """Run the weekly synthesis pipeline and deliver to markdown + Discord.
+
+    When window_start and window_end are both provided, runs scoped to that
+    historical date range instead of the default last-7-days-by-last_seen.
+    """
+    output = run_weekly_synthesis(
+        window_start_override=window_start,
+        window_end_override=window_end,
+    )
     status = deliver_synthesis(output)
 
     if output is None:
@@ -80,8 +91,26 @@ def list_events():
         print(line)
 
 
+def _consume_value_arg(args: list, flag: str) -> Optional[str]:
+    """Remove `--flag VALUE` from args and return VALUE. None if absent."""
+    if flag not in args:
+        return None
+    i = args.index(flag)
+    if i + 1 >= len(args):
+        print(f"error: {flag} requires a value (YYYY-MM-DD)", file=sys.stderr)
+        sys.exit(1)
+    value = args[i + 1]
+    del args[i : i + 2]
+    return value
+
+
 def main():
-    argv = set(sys.argv[1:])
+    raw_args = list(sys.argv[1:])
+
+    synthesis_start_str = _consume_value_arg(raw_args, "--synthesis-start")
+    synthesis_end_str = _consume_value_arg(raw_args, "--synthesis-end")
+
+    argv = set(raw_args)
     run_now = "--run-now" in argv
     once = "--once" in argv
     synthesize = "--synthesize" in argv
@@ -101,6 +130,36 @@ def main():
         )
         sys.exit(1)
 
+    if (synthesis_start_str is None) != (synthesis_end_str is None):
+        print(
+            "error: --synthesis-start and --synthesis-end must be provided together",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if synthesis_start_str is not None and not synthesize:
+        print(
+            "error: --synthesis-start / --synthesis-end are only valid with --synthesize",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    synthesis_start: Optional[date] = None
+    synthesis_end: Optional[date] = None
+    if synthesis_start_str is not None:
+        try:
+            synthesis_start = date.fromisoformat(synthesis_start_str)
+            synthesis_end = date.fromisoformat(synthesis_end_str)
+        except ValueError as e:
+            print(f"error: invalid date (expected YYYY-MM-DD): {e}", file=sys.stderr)
+            sys.exit(1)
+        if synthesis_end < synthesis_start:
+            print(
+                f"error: --synthesis-end ({synthesis_end}) is before "
+                f"--synthesis-start ({synthesis_start})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     if list_events_flag:
         list_events()
         return
@@ -110,7 +169,7 @@ def main():
         return
 
     if synthesize:
-        run_synthesis()
+        run_synthesis(window_start=synthesis_start, window_end=synthesis_end)
         return
 
     if run_now:

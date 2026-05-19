@@ -46,22 +46,45 @@ _HIGH_SCORE_THRESHOLD = 60
 _MAX_OUTPUT_TOKENS = 8192
 
 
-def run_weekly_synthesis() -> Optional[SynthesisOutput]:
-    """Cluster last 7 days of customer_voice leads into pain-point themes.
+def run_weekly_synthesis(
+    window_start_override: Optional[date] = None,
+    window_end_override: Optional[date] = None,
+) -> Optional[SynthesisOutput]:
+    """Cluster customer_voice leads into pain-point themes.
+
+    Default behavior: last 7 days by last_seen (the live weekly synthesis).
+    When both window_start_override and window_end_override are provided,
+    runs scoped to that explicit historical range, filtering on date_found
+    instead — so a past week can be re-synthesized from leads as they were
+    discovered, not as they were last touched.
 
     Returns None when there's insufficient data (fewer than 50 leads) or
     when the model response can't be parsed after a single retry.
     """
-    today = date.today()
-    window_start = today - timedelta(days=7)
+    override = window_start_override is not None and window_end_override is not None
+    if override:
+        window_start = window_start_override
+        window_end = window_end_override
+    else:
+        today = date.today()
+        window_start = today - timedelta(days=7)
+        window_end = today
     week_of = window_start.isoformat()
 
-    rows = _fetch_weekly_leads()
+    if override:
+        rows = _fetch_weekly_leads(start=window_start, end=window_end)
+    else:
+        rows = _fetch_weekly_leads()
 
     if len(rows) < _MIN_LEADS:
+        scope = (
+            f"in {window_start} to {window_end}"
+            if override
+            else "in past 7 days"
+        )
         print(
             f"insufficient data for synthesis — need 50+ customer_voice leads "
-            f"in past 7 days, got {len(rows)}"
+            f"{scope}, got {len(rows)}"
         )
         return None
 
@@ -69,7 +92,7 @@ def run_weekly_synthesis() -> Optional[SynthesisOutput]:
 
     sampled_note: Optional[str] = None
     if len(leads) > _SAMPLE_CAP:
-        iso_year, iso_week, _ = today.isocalendar()
+        iso_year, iso_week, _ = window_end.isocalendar()
         rng = random.Random(f"{iso_year}-W{iso_week}")
 
         high_score = [l for l in leads if l["score"] >= _HIGH_SCORE_THRESHOLD]
@@ -100,7 +123,7 @@ def run_weekly_synthesis() -> Optional[SynthesisOutput]:
         leads_for_prompt = leads
 
     events_overlapping = events_in_range(
-        window_start, today, EVENT_PRE_DAYS, EVENT_POST_DAYS
+        window_start, window_end, EVENT_PRE_DAYS, EVENT_POST_DAYS
     )
     events_in_window = [_format_event_label(e) for e in events_overlapping]
 
@@ -134,9 +157,31 @@ def _format_event_label(event: TournamentEvent) -> str:
     )
 
 
-def _fetch_weekly_leads() -> list[tuple]:
+def _fetch_weekly_leads(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+) -> list[tuple]:
+    """Fetch customer_voice leads for synthesis.
+
+    Default: last 7 days by last_seen (live weekly). When start and end
+    are both provided, filters on date_found BETWEEN start AND end — the
+    historical scope filters on when leads were discovered, not last
+    touched.
+    """
     conn = init_db()
     try:
+        if start is not None and end is not None:
+            return conn.execute(
+                """
+                SELECT url, title, score, source, source_type, strategy,
+                       event_name, event_window
+                FROM leads
+                WHERE source_type = 'customer_voice'
+                  AND date_found BETWEEN ? AND ?
+                ORDER BY score DESC
+                """,
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
         return conn.execute(
             """
             SELECT url, title, score, source, source_type, strategy,
