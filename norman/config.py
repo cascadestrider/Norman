@@ -321,7 +321,7 @@ X_SEARCH_TERMS = [
 
 X_MAX_RESULTS_PER_QUERY = 25
 X_LOOKBACK_HOURS = 48
-X_QUERIES_PER_RUN = 6
+X_QUERIES_PER_RUN = 10
 
 # --- LLM Token Pricing ($ per million tokens) ---
 MODEL_PRICING = {
