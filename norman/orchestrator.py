@@ -22,6 +22,7 @@ from norman.config import (
 )
 from norman.events import TournamentEvent, active_event_window, event_query_combos
 from norman.models import AnalystOutput
+from norman.x_cost_tracker import x_cost_tracker
 
 
 def run_pipeline():
@@ -294,6 +295,9 @@ def _build_run_log(
         else ""
     )
 
+    x_cost_line = x_cost_tracker.format_line()
+    x_cost_block = f"{x_cost_line}\n" if x_cost_line else ""
+
     save_counts = save_counts or {}
     save_block = (
         f"Saved: {save_counts.get('new', 0)} new, "
@@ -321,6 +325,7 @@ def _build_run_log(
         f"Norman Run Complete — {today}\n"
         f"Scouts: {' | '.join(scout_statuses)}\n"
         f"{rotation_block}"
+        f"{x_cost_block}"
         f"{event_line}"
         f"Customer-voice leads: {analyst_output.total_leads} across {sources_with_leads} sources\n"
         f"Competitor intel (not analyzed): {len(competitor_intel_leads)} "

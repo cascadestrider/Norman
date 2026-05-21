@@ -290,6 +290,39 @@ YOUTUBE_QUERIES = {
     ],
 }
 
+# --- X (Twitter) ---
+# X content is short (≤280 chars) and hashtag-driven, so queries are tuned for
+# brevity and reactive language rather than the conversational forms that work
+# on Reddit/Google. Day-one scope is intentionally narrow: 6 of 10 terms
+# rotated per run, 25 posts/query, 48-hour lookback. Wider scope is a future
+# decision after we see real cost-per-run.
+X_SEARCH_TERMS = [
+    # Sensitivity / file 3 — X is dense with short headache complaints
+    "polarized headache",
+    "sunglasses headache",
+    "photophobia sunglasses",
+    "concussion sunglasses",
+
+    # Screen visibility / file 2 — vivid short pain
+    "can't see phone sunglasses",
+
+    # Golf / file 1 — broad but X is searchable enough; event-aware
+    # variants (e.g. "PGA Championship sunglasses") are Phase 2.x work
+    "golf sunglasses",
+    "polarized golf",
+
+    # Discussion / debate bait — common X format
+    "polarized vs non-polarized",
+    "polarized sunglasses problem",
+
+    # Fishing — preserved across scouts; client input did not cover it
+    "fishing glare sunglasses",
+]
+
+X_MAX_RESULTS_PER_QUERY = 25
+X_LOOKBACK_HOURS = 48
+X_QUERIES_PER_RUN = 6
+
 # --- LLM Token Pricing ($ per million tokens) ---
 MODEL_PRICING = {
     "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
