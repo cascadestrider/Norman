@@ -37,10 +37,11 @@ def run_pipeline():
 
     # --- Event window check (Phase 1: Reddit-only consumer) ---
     active_event: Optional[TournamentEvent] = None
+    secondary_events: list[TournamentEvent] = []
     event_queries: list[str] = []
     if EVENT_MONITORING_ENABLED:
         try:
-            active_event = active_event_window(
+            active_event, secondary_events = active_event_window(
                 date.today(), EVENT_PRE_DAYS, EVENT_POST_DAYS
             )
             if active_event:
@@ -48,6 +49,7 @@ def run_pipeline():
         except Exception as e:
             print(f"⚠️  Event window check failed: {e}")
             active_event = None
+            secondary_events = []
             event_queries = []
 
     if active_event:
@@ -196,6 +198,7 @@ def run_pipeline():
         save_counts=save_counts,
         per_lead_ads=USE_PER_LEAD_ADS,
         active_event=active_event,
+        secondary_events=secondary_events,
         event_lead_count=event_lead_count,
     )
     print(run_log)
@@ -253,6 +256,9 @@ def _bypass_analyst_output(today: str, customer_voice_leads: list[Lead]) -> Anal
     )
 
 
+_TOUR_DISPLAY = {"PGA": "PGA", "LPGA": "LPGA", "DP_WORLD": "DP World"}
+
+
 def _build_run_log(
     today,
     scout_results,
@@ -262,6 +268,7 @@ def _build_run_log(
     save_counts: dict[str, int] | None = None,
     per_lead_ads: bool = True,
     active_event: Optional[TournamentEvent] = None,
+    secondary_events: list[TournamentEvent] | None = None,
     event_lead_count: int = 0,
 ) -> str:
     """Build the terminal-style run summary string. Printed locally and sent to Discord."""
@@ -317,6 +324,12 @@ def _build_run_log(
             f"{active_event.end_date.strftime('%m-%d')}) — "
             f"{event_lead_count} event-flagged leads\n"
         )
+        secs = secondary_events or []
+        if secs:
+            also = ", ".join(
+                f"{e.name} ({_TOUR_DISPLAY.get(e.tour, e.tour)})" for e in secs
+            )
+            event_line += f"  Also active this week: {also}\n"
     else:
         event_line = ""
 
