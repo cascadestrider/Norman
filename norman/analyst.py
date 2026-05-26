@@ -57,7 +57,10 @@ SEGMENT_POSITIONING = {
     "commuter": (
         "Daily-driver polarization that keeps phone screens, smartwatches, "
         "and GPS visible while still cutting windshield glare. No more "
-        "taking sunglasses off at every stoplight to check the map."
+        "taking sunglasses off at every stoplight to check the map. Also "
+        "tuned for the rainbow patterns, dark blotches, and visual "
+        "distortion that conventional polarized lenses produce against "
+        "tinted and laminated vehicle glass."
     ),
     "sensitivity": (
         "Designed for how your eyes actually work — color-accurate rather "

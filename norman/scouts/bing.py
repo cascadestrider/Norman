@@ -38,6 +38,8 @@ BING_QUERIES = {
         "eye strain driving bright sunlight forum",
         "polarized sunglasses blinded glare",
         "anti-glare sunglasses outdoor activities",
+        # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
+        "polarized lenses window tint problems",
     ],
 }
 

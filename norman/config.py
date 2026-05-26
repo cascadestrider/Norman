@@ -146,6 +146,12 @@ REDDIT_SEARCH_TERMS = [
     "can't read watch sunglasses",
     "sunglasses GPS HUD",
 
+    # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
+    # Two further phrasings deferred until Reddit registered-API migration.
+    "polarized sunglasses tinted windows",
+    "polarized lenses car windows",
+    "window tint distortion sunglasses",
+
     # Headaches / sensitivity (file 3)
     "sunglasses give me a headache",
     "polarized sunglasses headache",
@@ -216,6 +222,8 @@ GOOGLE_QUERIES = {
         "best sunglasses for phone screen visibility",
         "sunglasses too dark phone screen",
         "polarized sunglasses GPS screen visibility",
+        # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
+        "polarized sunglasses tinted car windows distortion",
     ],
 
     # Sensitivity — file 3 (new segment)
@@ -275,6 +283,9 @@ YOUTUBE_QUERIES = {
         "polarized sunglasses phone screen test",
         "best driving sunglasses review",
         "sunglasses color distortion review",
+        # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
+        "polarized sunglasses window tint",
+        "polarized rainbow windshield",
     ],
     "sensitivity": [
         "sunglasses headache review",
@@ -303,8 +314,12 @@ X_SEARCH_TERMS = [
     "photophobia sunglasses",
     "concussion sunglasses",
 
-    # Screen visibility / file 2 — vivid short pain
-    "can't see phone sunglasses",
+    # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
+    # Replaced "can't see phone sunglasses" (zero hits per May 20 diagnostic)
+    # with the tinted-window variant; added two more X-native short forms.
+    "polarized tinted windows",
+    "polarized sunglasses tint",
+    "window tint rainbow polarized",
 
     # Golf / file 1 — broad but X is searchable enough; event-aware
     # variants (e.g. "PGA Championship sunglasses") are Phase 2.x work
@@ -321,7 +336,9 @@ X_SEARCH_TERMS = [
 
 X_MAX_RESULTS_PER_QUERY = 25
 X_LOOKBACK_HOURS = 48
-X_QUERIES_PER_RUN = 10
+# Raised from 10 → 12 in Phase 1.8 to preserve fire-all semantics after the
+# tinted-window additions (commit c35ff91 deliberately moved X to fire-all).
+X_QUERIES_PER_RUN = 12
 
 # --- LLM Token Pricing ($ per million tokens) ---
 MODEL_PRICING = {

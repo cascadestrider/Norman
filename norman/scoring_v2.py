@@ -30,9 +30,10 @@ from norman.config import USE_SEMANTIC_SCORING, VOYAGE_API_KEY
 
 # First-person pain-point exemplars. Written to sound like real Reddit /
 # forum posters — not like the keyword table. Distribution across the five
-# active segments (golf 5, commuter 3, motorcycle 3, fishing 2, sensitivity 7).
+# active segments (golf 5, commuter 8, motorcycle 3, fishing 2, sensitivity 7).
 # Sensitivity gets the largest share because the file 3 pain is the most
-# emotionally loaded and underserved category per client input.
+# emotionally loaded and underserved category per client input. Commuter
+# share grew in Phase 1.8 with the polarized/tinted-window pain addition.
 SEED_EXEMPLARS: list[str] = [
     # Golf — file 1 (5 exemplars)
     "took my sunglasses off on every tee shot because I literally can't track the ball with them on, this is absurd",
@@ -45,6 +46,30 @@ SEED_EXEMPLARS: list[str] = [
     "can't see my phone screen at all with these polarized sunglasses on, have to take them off at every stoplight to check maps",
     "my smartwatch is completely invisible with my sunglasses, what's the point of the watch if I can't glance at it outside",
     "GPS screen goes dark and pixelated the moment I put my polarized sunglasses on, this is genuinely dangerous while driving",
+
+    # Commuter / polarized × tinted-window interaction — Phase 1.8 client pain (5 exemplars)
+    #
+    # Future work — vehicle/driving segment question:
+    #   The tinted-window pain is folded into the commuter segment in Phase 1.8.
+    #   First-run validation (2026-05-25) surfaced 4 tinted-window leads in the
+    #   day's top 10, but only 2 of 4 routed to commuter — the other 2 fell to
+    #   "general" because analyst.py's commuter SEGMENT_KEYWORDS set does not
+    #   include "tint" / "rainbow" / "windshield". The embedding scorer ranked
+    #   all 4 as commuter-adjacent; the keyword-based segment classifier did not.
+    #
+    #   Decide after 2-4 weeks of production data — whether tinted-window content
+    #   clusters as its own theme in synthesis or keeps splitting between
+    #   commuter and general — between:
+    #     (a) adding tinted-window keywords to analyst.py's commuter classifier
+    #         (small fix, keeps current segment count), or
+    #     (b) creating a dedicated vehicle/driving segment (larger refactor, but
+    #         cleaner positioning + routing).
+    #   Client conversation about a possible new segment is on the calendar.
+    "my polarized sunglasses make the tinted windows on my car look completely warped and blotchy, can't tell if the glass is bad or the lenses are",
+    "see rainbow patterns through the windshield every time I wear polarized lenses, distracting as hell when I'm actually trying to drive",
+    "polarized sunglasses do not work with my window tint at all, there's distortion everywhere I look and nobody warned me this would happen",
+    "hate that I can't see clearly through my own tint with polarized sunglasses on, ruins every drive once the sun is out",
+    "why do my tinted windows go dark and patchy the second I put my polarized lenses on, this can't just be me right",
 
     # Motorcycle / screen visibility — file 2 (3 exemplars)
     "the heads up display on my helmet is completely gone when I put my polarized sunglasses on, makes the HUD useless",
