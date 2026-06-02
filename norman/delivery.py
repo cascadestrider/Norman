@@ -1,7 +1,9 @@
 import os
+import sqlite3
 import time
 from datetime import date
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -10,10 +12,12 @@ from norman.models import (
     AnalystOutput,
     AnalystLead,
     DeliveryStatus,
+    Lead,
     SynthesisOutput,
     ThemeOutput,
 )
 from norman.config import DISCORD_WEBHOOK_URL, USE_PER_LEAD_ADS
+from norman.retailer_brands import extract_brand, known_brands_before
 from norman.token_tracker import token_tracker
 
 DISCORD_CHAR_LIMIT = 2000
@@ -401,6 +405,113 @@ def _top_n_by_score(output: AnalystOutput, n: int) -> list[AnalystLead]:
 
 
 # ---------------------------------------------------------------------------
+# Daily retailer report
+# ---------------------------------------------------------------------------
+
+def run_retailer_report(
+    today: str,
+    leads_today: list[Lead],
+    conn: sqlite3.Connection,
+) -> str:
+    """Post a daily retailer-activity Discord message alongside the customer-voice
+    report. Returns a status string for the orchestrator's run log.
+
+    leads_today must already be filtered to source_type='retailer' by the caller.
+    """
+    if not DISCORD_WEBHOOK_URL:
+        return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
+
+    stats = {"posted": 0, "retried": 0, "dropped": 0}
+    errors: list[str] = []
+
+    # Dedupe by canonical URL (path only, query string + fragment stripped).
+    # The same article frequently surfaces as multiple "distinct" leads when
+    # Google appends rotating ?srsltid=... tracking params, etc. We keep the
+    # highest-scoring instance per canonical URL.
+    #
+    # Future work / upstream fix: the root cause lives in the orchestrator's
+    # in-run dedup (step 2, lines 100-106) which compares raw URLs as strings,
+    # so ?srsltid=A and ?srsltid=B count as two leads. The same issue affects
+    # the customer-voice report. The proper fix is URL canonicalization at
+    # save_lead / db.py time, not presentation-layer dedup here.
+    deduped: dict[str, Lead] = {}
+    for lead in sorted(leads_today, key=lambda l: l.score, reverse=True):
+        canonical = _canonical_url(lead.url)
+        if canonical not in deduped:
+            deduped[canonical] = lead
+    leads_today = list(deduped.values())
+
+    # Bulk-compute the historical brand set once; per-lead novelty is then a
+    # set-membership check, not a re-scan per lead.
+    known = known_brands_before(conn, today)
+
+    enriched: list[tuple[Lead, str, bool]] = []
+    brand_counts: dict[str, int] = {}
+    for lead in leads_today:
+        brand = extract_brand(lead.url, lead.title or "", lead.snippet or "")
+        novel = brand not in known
+        enriched.append((lead, brand, novel))
+        brand_counts[brand] = brand_counts.get(brand, 0) + 1
+    enriched.sort(key=lambda t: t[0].score, reverse=True)
+
+    header = (
+        f"📊 **Retailer Activity — {today}**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Retailer leads: **{len(leads_today)}**\n"
+    )
+
+    if not leads_today:
+        msg = header + "_No retailer activity today._\n"
+        err = _send_webhook(msg[:DISCORD_CHAR_LIMIT], stats)
+        if err:
+            return f"⚠️ Discord drop: {err}"
+        return "✅ Discord: posted retailer report (empty)"
+
+    top_brands = sorted(brand_counts.items(), key=lambda kv: kv[1], reverse=True)
+    top_brands_str = ", ".join(f"{b} ({n})" for b, n in top_brands[:5])
+    if top_brands_str:
+        header += f"Top retailers: {top_brands_str}\n"
+    header += "\n🏆 **Top 10 Retailer Leads by Score**\n\n"
+
+    top_lines: list[str] = []
+    for i, (lead, brand, novel) in enumerate(enriched[:10], 1):
+        novel_marker = " 🆕 NEW" if novel else ""
+        title = (lead.title or "").strip().replace("\n", " ")
+        title_trim = title[:80] if title else "(no title)"
+        top_lines.append(
+            f"{i}. **{brand}**{novel_marker} — Score {lead.score}\n"
+            f"   [{title_trim}]({lead.url})"
+        )
+
+    chunks: list[str] = []
+    current = header
+    for line in top_lines:
+        candidate = current + line + "\n"
+        if len(candidate) > DISCORD_CHAR_LIMIT:
+            if current.strip():
+                chunks.append(current)
+            current = line + "\n"
+        else:
+            current = candidate
+    if current.strip():
+        chunks.append(current)
+
+    for chunk in chunks:
+        err = _send_webhook(chunk[:DISCORD_CHAR_LIMIT], stats)
+        if err:
+            errors.append(err)
+
+    total = stats["posted"] + stats["retried"] + stats["dropped"]
+    summary = (
+        f"posted {stats['posted']}/{total} messages, "
+        f"{stats['retried']} retried, {stats['dropped']} dropped"
+    )
+    if errors:
+        return f"⚠️ Discord partial ({summary}): {'; '.join(errors)}"
+    return f"✅ Discord: {summary}"
+
+
+# ---------------------------------------------------------------------------
 # Weekly synthesis delivery
 # ---------------------------------------------------------------------------
 
@@ -438,6 +549,12 @@ def _post_synthesis_skip_notice() -> str:
 
 
 def _write_synthesis_markdown(output: SynthesisOutput) -> str:
+    # Future work: the H1 below reads "Week ending {date.today()}" rather than
+    # the actual window-of-analysis end date. For live weekly runs the two
+    # match, but for historical synthesis runs (override windows) the H1
+    # misrepresents the window. The body's `week_of` field carries the true
+    # start date — that's correct — but the headline does not. Same issue
+    # affects _write_retailer_synthesis_markdown. Out of scope for Phase 1.9.
     os.makedirs("reports/synthesis", exist_ok=True)
     filename = f"reports/synthesis/{output.week_of}.md"
     today = date.today().isoformat()
@@ -580,6 +697,185 @@ def _format_breakdown(breakdown: dict[str, int]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Weekly retailer synthesis delivery
+# ---------------------------------------------------------------------------
+
+def deliver_retailer_synthesis(
+    synthesis_output: Optional[SynthesisOutput],
+) -> DeliveryStatus:
+    """Deliver a weekly retailer SynthesisOutput to markdown + Discord.
+
+    Sibling of deliver_synthesis; same status fields, same handling of None
+    (synthesizer returned None → skip notice posted, markdown marked).
+    """
+    status = DeliveryStatus()
+
+    if synthesis_output is None:
+        status.synthesis_markdown = "⏸️  skipped (retailer synthesizer returned None)"
+        status.synthesis_discord = _post_retailer_synthesis_skip_notice()
+        return status
+
+    status.synthesis_markdown = _write_retailer_synthesis_markdown(synthesis_output)
+    status.synthesis_discord = _post_retailer_synthesis_discord(synthesis_output)
+    return status
+
+
+def _post_retailer_synthesis_skip_notice() -> str:
+    if not DISCORD_WEBHOOK_URL:
+        return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
+    stats = {"posted": 0, "retried": 0, "dropped": 0}
+    msg = (
+        "📊 Norman Retailer Synthesis skipped — insufficient retailer data "
+        "in past 7 days. Next check: next Monday."
+    )
+    err = _send_webhook(msg, stats)
+    if err:
+        return f"⚠️ Discord drop: {err}"
+    return "✅ Discord: posted skip notice"
+
+
+def _write_retailer_synthesis_markdown(output: SynthesisOutput) -> str:
+    os.makedirs("reports/retailer_synthesis", exist_ok=True)
+    filename = f"reports/retailer_synthesis/{output.week_of}.md"
+    today = date.today().isoformat()
+
+    try:
+        with open(filename, "w") as f:
+            f.write(f"# Norman Weekly Retailer Synthesis — Week ending {today}\n\n")
+            if output.events_in_window:
+                f.write(
+                    f"_Tournament context: "
+                    f"{', '.join(output.events_in_window)}_\n\n"
+                )
+
+            f.write("## Summary\n\n")
+            f.write(f"{output.summary}\n\n")
+            f.write(f"Total retailer leads analyzed: {output.leads_analyzed}\n\n")
+            if output.sampled_note:
+                f.write(f"_{output.sampled_note}_\n\n")
+
+            f.write("## Retailer Themes\n\n")
+            for i, theme in enumerate(output.themes, 1):
+                f.write(
+                    f"### Theme {i} — {theme.name} "
+                    f"(saturation: {theme.urgency_score}/10)\n\n"
+                )
+                f.write(f"**Pain point:** {theme.pain_point}\n\n")
+                f.write(
+                    f"**Segment breakdown:** {_format_breakdown(theme.segment_breakdown)}\n\n"
+                )
+
+                if theme.representative_quotes:
+                    f.write("**Representative retailer copy:**\n\n")
+                    last = len(theme.representative_quotes) - 1
+                    for idx, q in enumerate(theme.representative_quotes):
+                        if q.quote:
+                            f.write(
+                                f'> "{q.quote}" — [{q.segment}]({q.source_url})\n'
+                            )
+                        else:
+                            f.write(f"> [{q.segment}]({q.source_url})\n")
+                        f.write(f"> *Summary: {q.summary}*\n")
+                        if idx != last:
+                            f.write(">\n")
+                    f.write("\n")
+
+                if theme.creative_angles:
+                    f.write("**Torque counter-positioning angles:**\n\n")
+                    for j, angle in enumerate(theme.creative_angles, 1):
+                        f.write(f"{j}. **{angle.angle}**\n")
+                        f.write(f"   Hook: {angle.hook}\n")
+                        f.write(f"   Proof: {angle.proof_point}\n\n")
+
+            usage_block = _format_token_usage(today)
+            if usage_block:
+                f.write(usage_block)
+
+        return f"✅ written to {filename}"
+    except Exception as e:
+        return f"❌ retailer synthesis markdown write failed: {e}"
+
+
+def _post_retailer_synthesis_discord(output: SynthesisOutput) -> str:
+    """Post retailer synthesis to Discord. One intro message + one message per
+    theme, each chunked to the 2000-char limit. Same channel as customer-voice
+    synthesis, distinguished by the 'Retailer Synthesis' label.
+    """
+    if not DISCORD_WEBHOOK_URL:
+        return "⚠️ not configured (no DISCORD_WEBHOOK_URL)"
+
+    stats = {"posted": 0, "retried": 0, "dropped": 0}
+    errors: list[str] = []
+    today = date.today().isoformat()
+
+    intro = (
+        f"📊 **Norman Retailer Synthesis — Week ending {today}**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{output.summary}\n"
+        f"Retailer leads analyzed: **{output.leads_analyzed}**"
+    )
+    if output.sampled_note:
+        intro += f"\n_{output.sampled_note}_"
+
+    err = _send_webhook(intro[:DISCORD_CHAR_LIMIT], stats)
+    if err:
+        errors.append(f"intro: {err}")
+
+    for theme in output.themes:
+        msg = _format_retailer_theme_for_discord(theme, today)
+        err = _send_webhook(msg[:DISCORD_CHAR_LIMIT], stats)
+        if err:
+            errors.append(f"{theme.name}: {err}")
+
+    total = stats["posted"] + stats["retried"] + stats["dropped"]
+    summary = (
+        f"posted {stats['posted']}/{total} messages, "
+        f"{stats['retried']} retried, {stats['dropped']} dropped"
+    )
+    if errors:
+        return f"⚠️ Discord partial ({summary}): {'; '.join(errors)}"
+    return f"✅ Discord: {summary}"
+
+
+def _format_retailer_theme_for_discord(theme: ThemeOutput, today: str) -> str:
+    """Render one retailer theme as a self-contained Discord message.
+
+    Sibling of _format_theme_for_discord with retailer-specific labels:
+    "Retailer Synthesis" header, "Saturation" instead of urgency, "Brands"
+    instead of segments (segment_breakdown holds brand counts here only when
+    the model returned brand keys; customer-segment keys still render fine
+    via _format_breakdown).
+    """
+    lines = [
+        f"📊 **Norman Retailer Synthesis — Week ending {today}**",
+        f"**Theme:** {theme.name} (saturation {theme.urgency_score}/10)",
+        f"**Pain:** {theme.pain_point}",
+        f"**Segments:** {_format_breakdown(theme.segment_breakdown)}",
+    ]
+
+    if theme.representative_quotes:
+        lines.append("**Representative retailer copy:**")
+        top = theme.representative_quotes[:2]
+        last = len(top) - 1
+        for idx, q in enumerate(top):
+            link = f"[{q.segment}](<{q.source_url}>)"
+            if q.quote:
+                lines.append(f'> "{q.quote}" — {link}')
+            else:
+                lines.append(f"> {link}")
+            lines.append(f"> _Summary: {q.summary}_")
+            if idx != last:
+                lines.append("")
+
+    if theme.creative_angles:
+        lines.append("**Torque counter-positioning:**")
+        for angle in theme.creative_angles:
+            lines.append(f"• {angle.angle}: {angle.hook}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Markdown report
 # ---------------------------------------------------------------------------
 
@@ -696,6 +992,17 @@ def _send_webhook(message: str, stats: dict | None = None) -> str | None:
     if stats is not None:
         stats["dropped"] += 1
     return f"HTTP {resp.status_code}"
+
+
+def _canonical_url(url: str) -> str:
+    """Return scheme://netloc/path — query string and fragment stripped.
+    Used for presentation-layer dedup in the retailer report.
+    """
+    try:
+        parsed = urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    except Exception:
+        return url
 
 
 def _collect_sources(output: AnalystOutput) -> set[str]:

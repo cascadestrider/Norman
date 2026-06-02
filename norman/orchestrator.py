@@ -10,7 +10,7 @@ from norman.scouts import ALL_SCOUTS
 from norman.scouts.base import BaseScout
 from norman.analyst import run_analyst, primary_segment
 from norman.classifier import classify_source_type
-from norman.delivery import run_delivery
+from norman.delivery import run_delivery, run_retailer_report
 from norman.db import init_db, get_seen_urls, save_lead
 from norman.config import (
     SCORE_THRESHOLD,
@@ -212,6 +212,12 @@ def run_pipeline():
     print(f"  Discord:   {delivery_status.discord}")
     print(f"  Klaviyo:   {delivery_status.klaviyo}")
     print(f"  Dashboard: {delivery_status.dashboard}")
+
+    retailer_leads_today = [
+        l for l in competitor_intel_leads if l.source_type == "retailer"
+    ]
+    retailer_status = run_retailer_report(today, retailer_leads_today, conn)
+    print(f"  Retailer:  {retailer_status}")
 
     conn.close()
 

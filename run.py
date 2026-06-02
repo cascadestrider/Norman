@@ -2,13 +2,15 @@
 """Norman v2 — AI Ad Intelligence Pipeline for Torque Optics.
 
 Usage:
-    python run.py                # Start scheduler (odd-date daily pipeline + Monday weekly synthesis)
-    python run.py --run-now      # Run pipeline once, then start scheduler
-    python run.py --once         # Run the daily pipeline once and exit
-    python run.py --synthesize   # Run the weekly synthesis once and exit
-    python run.py --list-events  # Print the tournament calendar with status markers
+    python run.py                          # Start scheduler
+    python run.py --run-now                # Run pipeline once, then start scheduler
+    python run.py --once                   # Run the daily pipeline once and exit
+    python run.py --synthesize             # Run the weekly customer-voice synthesis once and exit
+    python run.py --synthesize-retailer    # Run the weekly retailer synthesis once and exit
+    python run.py --list-events            # Print the tournament calendar with status markers
 
---run-now, --once, --synthesize, and --list-events are mutually exclusive.
+--run-now, --once, --synthesize, --synthesize-retailer, and --list-events
+are mutually exclusive.
 
 For persistence across reboots and terminal closes, migrate to launchd.
 See docs/launchd-setup.md (future).
@@ -18,8 +20,8 @@ from datetime import date, timedelta
 from typing import Optional
 
 from norman.orchestrator import run_pipeline
-from norman.synthesizer import run_weekly_synthesis
-from norman.delivery import deliver_synthesis
+from norman.synthesizer import run_weekly_synthesis, run_weekly_retailer_synthesis
+from norman.delivery import deliver_synthesis, deliver_retailer_synthesis
 from norman.config import EVENT_PRE_DAYS, EVENT_POST_DAYS
 from norman.events import EVENTS_2026
 
@@ -32,7 +34,8 @@ def run_synthesis(
     window_start: Optional[date] = None,
     window_end: Optional[date] = None,
 ):
-    """Run the weekly synthesis pipeline and deliver to markdown + Discord.
+    """Run the weekly customer-voice synthesis pipeline and deliver to
+    markdown + Discord.
 
     When window_start and window_end are both provided, runs scoped to that
     historical date range instead of the default last-7-days-by-last_seen.
@@ -48,6 +51,34 @@ def run_synthesis(
     else:
         print(
             f"\n📊 Synthesis complete — week_of {output.week_of}, "
+            f"{len(output.themes)} themes, {output.leads_analyzed} leads analyzed"
+        )
+        if output.sampled_note:
+            print(f"  {output.sampled_note}")
+    print(f"  Markdown: {status.synthesis_markdown}")
+    print(f"  Discord:  {status.synthesis_discord}")
+
+
+def run_retailer_synthesis(
+    window_start: Optional[date] = None,
+    window_end: Optional[date] = None,
+):
+    """Run the weekly retailer synthesis pipeline and deliver to markdown +
+    Discord. Sibling of run_synthesis. Same override semantics."""
+    output = run_weekly_retailer_synthesis(
+        window_start_override=window_start,
+        window_end_override=window_end,
+    )
+    status = deliver_retailer_synthesis(output)
+
+    if output is None:
+        print(
+            "\n📊 Retailer Synthesis: None returned "
+            "(insufficient data or parse failure)"
+        )
+    else:
+        print(
+            f"\n📊 Retailer Synthesis complete — week_of {output.week_of}, "
             f"{len(output.themes)} themes, {output.leads_analyzed} leads analyzed"
         )
         if output.sampled_note:
@@ -114,12 +145,14 @@ def main():
     run_now = "--run-now" in argv
     once = "--once" in argv
     synthesize = "--synthesize" in argv
+    synthesize_retailer = "--synthesize-retailer" in argv
     list_events_flag = "--list-events" in argv
 
     exclusive = [
         ("--run-now", run_now),
         ("--once", once),
         ("--synthesize", synthesize),
+        ("--synthesize-retailer", synthesize_retailer),
         ("--list-events", list_events_flag),
     ]
     chosen = [name for name, on in exclusive if on]
@@ -136,9 +169,10 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
-    if synthesis_start_str is not None and not synthesize:
+    if synthesis_start_str is not None and not (synthesize or synthesize_retailer):
         print(
-            "error: --synthesis-start / --synthesis-end are only valid with --synthesize",
+            "error: --synthesis-start / --synthesis-end are only valid with "
+            "--synthesize or --synthesize-retailer",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -172,6 +206,12 @@ def main():
         run_synthesis(window_start=synthesis_start, window_end=synthesis_end)
         return
 
+    if synthesize_retailer:
+        run_retailer_synthesis(
+            window_start=synthesis_start, window_end=synthesis_end
+        )
+        return
+
     if run_now:
         run_pipeline()
 
@@ -180,11 +220,14 @@ def main():
     scheduler = BlockingScheduler()
     scheduler.add_job(run_pipeline, "cron", day=_ODD_DAYS, hour=9, minute=0)
     scheduler.add_job(run_synthesis, "cron", day_of_week="mon", hour=9, minute=15)
+    scheduler.add_job(
+        run_retailer_synthesis, "cron", day_of_week="mon", hour=9, minute=30
+    )
 
     print(
         "\n⏰ Norman scheduled — pipeline on odd calendar dates at 9:00 AM, "
-        "synthesis every Monday at 9:15 AM. Keep this terminal open for "
-        "the scheduler to run."
+        "customer-voice synthesis every Monday at 9:15 AM, retailer synthesis "
+        "every Monday at 9:30 AM. Keep this terminal open for the scheduler to run."
     )
     scheduler.start()
 
