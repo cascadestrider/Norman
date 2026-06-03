@@ -116,6 +116,7 @@ def run_pipeline():
     customer_voice_leads: list[Lead] = []
     competitor_intel_leads: list[Lead] = []
     off_topic_leads: list[Lead] = []
+    unknown_leads: list[Lead] = []
     for lead in all_leads:
         lead.source_type = classify_source_type(lead.title, lead.snippet, lead.url)
         if lead.source_type == "customer_voice":
@@ -125,14 +126,18 @@ def run_pipeline():
         elif lead.source_type == "off_topic":
             off_topic_leads.append(lead)
         else:
-            # Treat unknown as customer_voice to stay conservative — the
-            # analyst can still flag them. Switch to competitor_intel if
-            # we decide unknowns are more likely to be marketing noise.
-            customer_voice_leads.append(lead)
+            # Prior to Phase 1.10, source_type='unknown' fell through to
+            # customer_voice as a defensive default. The June 3 production run
+            # revealed this was polluting the top-10 with scrape-failed leads
+            # (Facebook auth walls, etc.). Now unknown leads are saved (for
+            # diagnostics) but excluded from customer-voice delivery and
+            # synthesis — same shape as off_topic_leads above.
+            unknown_leads.append(lead)
     print(
         f"  customer_voice (→ analyst): {len(customer_voice_leads)} | "
         f"competitor_intel (stored only): {len(competitor_intel_leads)} | "
-        f"off_topic (stored only): {len(off_topic_leads)}"
+        f"off_topic (stored only): {len(off_topic_leads)} | "
+        f"unknown (stored only): {len(unknown_leads)}"
     )
 
     # --- Step 3: Dispatch Analyst (or skip if USE_PER_LEAD_ADS=0) ---
@@ -191,10 +196,17 @@ def run_pipeline():
         status = save_lead(conn, lead)
         save_counts[status] = save_counts.get(status, 0) + 1
 
+    # Unknown leads are persisted for diagnostic visibility but never routed
+    # into delivery or synthesis (see Step 2.5 comment).
+    for lead in unknown_leads:
+        status = save_lead(conn, lead)
+        save_counts[status] = save_counts.get(status, 0) + 1
+
     # --- Step 4: Build run log (printed to terminal + passed to Delivery) ---
     run_log = _build_run_log(
         today, scout_results, analyst_output, competitor_intel_leads,
         off_topic_leads=off_topic_leads,
+        unknown_leads=unknown_leads,
         save_counts=save_counts,
         per_lead_ads=USE_PER_LEAD_ADS,
         active_event=active_event,
@@ -271,6 +283,7 @@ def _build_run_log(
     analyst_output,
     competitor_intel_leads: list[Lead] | None = None,
     off_topic_leads: list[Lead] | None = None,
+    unknown_leads: list[Lead] | None = None,
     save_counts: dict[str, int] | None = None,
     per_lead_ads: bool = True,
     active_event: Optional[TournamentEvent] = None,
@@ -298,6 +311,8 @@ def _build_run_log(
     )
     off_topic_leads = off_topic_leads or []
     off_topic_count = len(off_topic_leads)
+    unknown_leads = unknown_leads or []
+    unknown_count = len(unknown_leads)
 
     rotation_lines = [
         note for r in scout_results.values() for note in r.notes
@@ -350,6 +365,7 @@ def _build_run_log(
         f"Competitor intel (not analyzed): {len(competitor_intel_leads)} "
         f"(retailer: {retailer_count}, editorial: {editorial_count})\n"
         f"Off-topic (not analyzed): {off_topic_count}\n"
+        f"Unknown (stored only, excluded from delivery): {unknown_count}\n"
         f"Top lead: {top_str}\n"
         f"{analyst_line}"
         f"{save_block}"

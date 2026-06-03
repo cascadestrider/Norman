@@ -1,7 +1,12 @@
 import requests
 from bs4 import BeautifulSoup
 from serpapi import GoogleSearch
-from norman.scouts.base import BaseScout, reddit_fetch_url
+from norman.scouts.base import (
+    BaseScout,
+    reddit_fetch_url,
+    suffix_host_match,
+    title_matches_error_pattern,
+)
 from norman.models import Lead, ScoutResult
 from norman.scoring_v2 import score_lead
 from norman.query_selector import pick_queries
@@ -9,6 +14,8 @@ from norman.config import (
     SERP_API_KEY,
     WEB_HEADERS,
     EXCLUDED_DOMAINS,
+    BLOCKED_DOMAINS,
+    ERROR_TITLE_PATTERNS,
     SCORE_THRESHOLD,
 )
 
@@ -67,6 +74,8 @@ class BingScout(BaseScout):
         visited_this_run: set[str] = set()
         total_pool = sum(len(q) for q in BING_QUERIES.values())
         selected_count = 0
+        blocked_count = 0
+        error_filtered = 0
 
         for segment, queries in BING_QUERIES.items():
             selected = pick_queries(queries, BING_QUERIES_PER_SEGMENT)
@@ -78,15 +87,29 @@ class BingScout(BaseScout):
                         continue
                     if self._is_excluded(url):
                         continue
+                    # Skip auth-walled domains (Facebook, Instagram, etc.) that
+                    # reliably fail to scrape unauthenticated — see BLOCKED_DOMAINS.
+                    if suffix_host_match(url, BLOCKED_DOMAINS):
+                        blocked_count += 1
+                        continue
                     visited_this_run.add(url)
                     lead = self._scrape_and_score(url, errors)
                     if lead and lead.score >= SCORE_THRESHOLD:
+                        # Drop scrape failures / auth walls that slipped past
+                        # the domain blocklist — see ERROR_TITLE_PATTERNS.
+                        if title_matches_error_pattern(lead.title, ERROR_TITLE_PATTERNS):
+                            error_filtered += 1
+                            continue
                         leads.append(lead)
 
         notes.append(
             f"Bing: selected {selected_count} of {total_pool} queries today "
             f"(n={BING_QUERIES_PER_SEGMENT}/segment)"
         )
+        if blocked_count:
+            notes.append(f"Bing: skipped {blocked_count} blocked URLs (auth-walled domains)")
+        if error_filtered:
+            notes.append(f"Bing: filtered {error_filtered} error-titled leads (scrape failures)")
         return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
     def _search(self, query: str, errors: list[str]) -> list[str]:

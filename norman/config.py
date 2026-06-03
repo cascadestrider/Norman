@@ -106,6 +106,44 @@ EXCLUDED_DOMAINS = [
     "britannica.com",
 ]
 
+# --- Auth-walled content blocklist (Google + Bing scouts) ---
+# These domains reliably return Error / Login Required / Access Denied pages
+# when scraped unauthenticated, so following their URLs only produces
+# scrape-failed "Error"-titled leads (see Phase 1.10, June 3 production run:
+# 6 of 10 customer-voice top leads were Facebook auth-wall failures). Unlike
+# EXCLUDED_DOMAINS above (loose substring match for dictionary/encyclopedia
+# noise), this list is matched by HOSTNAME SUFFIX — so subdomains like
+# groups.facebook.com and business.linkedin.com also match. Grows as new
+# auth-walled / scrape-hostile domains are discovered.
+BLOCKED_DOMAINS = frozenset({
+    "facebook.com",
+    "m.facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "pinterest.com",
+})
+
+# --- Error-title patterns (all scouts) ---
+# Catches scraping failures and auth-walled content that didn't get caught at
+# the domain layer (network errors, Cloudflare interception, sudden content
+# blocks on non-blocklisted domains). A lead whose title exactly equals one of
+# these — or, for short titles (< 50 chars), contains one as a substring — is a
+# scrape failure, not real content, and is dropped before it reaches scoring/
+# delivery. The short-title guard keeps long titles that merely mention "error"
+# mid-sentence from triggering. Grows organically as new error pages surface.
+ERROR_TITLE_PATTERNS = frozenset({
+    "error",
+    "access denied",
+    "site maintenance",
+    "forbidden",
+    "page not found",
+    "404",
+    "503",
+    "login required",
+    "sign in to continue",
+    "permission denied",
+})
+
 # --- Reddit ---
 REDDIT_HEADERS = {
     "User-Agent": "AdScout/1.0 (lead research tool; contact via github)"

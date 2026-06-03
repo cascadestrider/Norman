@@ -6,6 +6,45 @@ from norman.events import TournamentEvent
 from norman.models import Lead, ScoutResult
 
 
+def suffix_host_match(url: str, blocked: frozenset[str]) -> bool:
+    """Return True if the URL's hostname equals or is a subdomain of any entry
+    in `blocked`. Matches by hostname suffix on dot boundaries, so
+    "groups.facebook.com" matches "facebook.com" but "notfacebook.com" does
+    not. Used to skip auth-walled domains (config.BLOCKED_DOMAINS) that
+    reliably fail to scrape unauthenticated.
+    """
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    for domain in blocked:
+        if host == domain or host.endswith("." + domain):
+            return True
+    return False
+
+
+def title_matches_error_pattern(title: str, patterns: frozenset[str]) -> bool:
+    """Return True if `title` looks like a scrape failure / auth wall.
+
+    Matches when the lowercased, stripped title exactly equals a pattern, or
+    (for short titles < 50 chars) contains a pattern as a substring. The
+    short-title guard prevents long, genuine titles that happen to contain a
+    word like "error" mid-sentence from being dropped. See
+    config.ERROR_TITLE_PATTERNS — this catches failures that slipped past the
+    domain-level blocklist (network errors, Cloudflare, sudden content blocks).
+    """
+    t = (title or "").lower().strip()
+    if not t:
+        return False
+    if t in patterns:
+        return True
+    if len(t) < 50 and any(p in t for p in patterns):
+        return True
+    return False
+
+
 def reddit_fetch_url(url: str) -> str:
     """Return the URL to fetch for scraping, rewriting reddit.com hosts to
     old.reddit.com. The old frontend serves real thread titles in the initial

@@ -19,9 +19,10 @@ from norman.events import TournamentEvent
 from norman.models import Lead, ScoutResult
 from norman.query_selector import pick_queries
 from norman.scoring_v2 import score_lead
-from norman.scouts.base import BaseScout
+from norman.scouts.base import BaseScout, title_matches_error_pattern
 from norman.x_cost_tracker import x_cost_tracker
 from norman.config import (
+    ERROR_TITLE_PATTERNS,
     SCORE_THRESHOLD,
     X_BEARER_TOKEN,
     X_LOOKBACK_HOURS,
@@ -70,6 +71,7 @@ class XScout(BaseScout):
         headers = {"Authorization": f"Bearer {X_BEARER_TOKEN}"}
 
         total_posts = 0
+        error_filtered = 0
         for term in selected_terms:
             posts, err = self._search(term, start_time, headers)
             if err == "AUTH_FAILED":
@@ -102,6 +104,13 @@ class XScout(BaseScout):
                 if score < SCORE_THRESHOLD:
                     continue
 
+                # Universal error-title filter — X posts are the platform's own
+                # content so this rarely fires, but a short post that is itself
+                # an error string (e.g. "404 not found") shouldn't become a lead.
+                if title_matches_error_pattern(text, ERROR_TITLE_PATTERNS):
+                    error_filtered += 1
+                    continue
+
                 leads.append(Lead(
                     url=url,
                     title=text,        # full post text → classifier reads it
@@ -116,6 +125,8 @@ class XScout(BaseScout):
             f"X recent search: {len(selected_terms)} of {len(X_SEARCH_TERMS)} "
             f"terms cycled, {self.call_count} calls, {total_posts} posts returned"
         )
+        if error_filtered:
+            notes.append(f"X: filtered {error_filtered} error-titled leads")
 
         x_cost_tracker.record(self.call_count, self.posts_read)
 

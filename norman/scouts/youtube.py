@@ -1,9 +1,14 @@
 import requests
-from norman.scouts.base import BaseScout
+from norman.scouts.base import BaseScout, title_matches_error_pattern
 from norman.models import Lead, ScoutResult
 from norman.scoring_v2 import score_lead
 from norman.query_selector import pick_queries
-from norman.config import YOUTUBE_API_KEY, YOUTUBE_QUERIES, SCORE_THRESHOLD
+from norman.config import (
+    YOUTUBE_API_KEY,
+    YOUTUBE_QUERIES,
+    ERROR_TITLE_PATTERNS,
+    SCORE_THRESHOLD,
+)
 
 YOUTUBE_QUERIES_PER_SEGMENT = 5
 
@@ -24,6 +29,7 @@ class YouTubeScout(BaseScout):
         visited_this_run: set[str] = set()
         total_pool = sum(len(q) for q in YOUTUBE_QUERIES.values())
         selected_count = 0
+        error_filtered = 0
 
         for segment, queries in YOUTUBE_QUERIES.items():
             selected = pick_queries(queries, YOUTUBE_QUERIES_PER_SEGMENT)
@@ -49,6 +55,10 @@ class YouTubeScout(BaseScout):
                     found_kws, score = score_lead(full_text)
 
                     if score >= SCORE_THRESHOLD:
+                        # Drop scrape failures / auth walls — see ERROR_TITLE_PATTERNS.
+                        if title_matches_error_pattern(title, ERROR_TITLE_PATTERNS):
+                            error_filtered += 1
+                            continue
                         leads.append(Lead(
                             url=url,
                             title=title,
@@ -63,6 +73,8 @@ class YouTubeScout(BaseScout):
             f"YouTube: selected {selected_count} of {total_pool} queries today "
             f"(n={YOUTUBE_QUERIES_PER_SEGMENT}/segment)"
         )
+        if error_filtered:
+            notes.append(f"YouTube: filtered {error_filtered} error-titled leads (scrape failures)")
         return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
     def _search_videos(

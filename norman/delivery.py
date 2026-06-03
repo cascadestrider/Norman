@@ -452,7 +452,25 @@ def run_retailer_report(
         novel = brand not in known
         enriched.append((lead, brand, novel))
         brand_counts[brand] = brand_counts.get(brand, 0) + 1
-    enriched.sort(key=lambda t: t[0].score, reverse=True)
+
+    # Title-based content dedup catches handles that repost the same message
+    # multiple times (e.g., @golfwang7hqu's three identical tweets on 6/3).
+    # Future enhancement: surface repost-count as a campaign signal instead of
+    # suppressing duplicates entirely.
+    #
+    # This narrows the top-10 SELECTION pool only — brand_counts above is left
+    # at full count so the brand-aggregation summary still reflects every post
+    # (@golfwang7hqu stays at 3). Within each (brand, normalized-title) group we
+    # keep the highest-scoring lead; the rest stay in the DB but drop out of the
+    # top-10 ranking.
+    best_by_content: dict[tuple[str, str], tuple[Lead, str, bool]] = {}
+    for lead, brand, novel in enriched:
+        norm_title = (lead.title or "").lower().strip()[:80]
+        key = (brand, norm_title)
+        existing = best_by_content.get(key)
+        if existing is None or lead.score > existing[0].score:
+            best_by_content[key] = (lead, brand, novel)
+    top_pool = sorted(best_by_content.values(), key=lambda t: t[0].score, reverse=True)
 
     header = (
         f"📊 **Retailer Activity — {today}**\n"
@@ -474,7 +492,7 @@ def run_retailer_report(
     header += "\n🏆 **Top 10 Retailer Leads by Score**\n\n"
 
     top_lines: list[str] = []
-    for i, (lead, brand, novel) in enumerate(enriched[:10], 1):
+    for i, (lead, brand, novel) in enumerate(top_pool[:10], 1):
         novel_marker = " 🆕 NEW" if novel else ""
         title = (lead.title or "").strip().replace("\n", " ")
         title_trim = title[:80] if title else "(no title)"

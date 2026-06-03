@@ -2,7 +2,7 @@ import time
 from itertools import cycle
 from typing import Optional
 import requests
-from norman.scouts.base import BaseScout
+from norman.scouts.base import BaseScout, title_matches_error_pattern
 from norman.events import TournamentEvent, event_verification_keywords
 from norman.models import Lead, ScoutResult
 from norman.scoring_v2 import score_lead
@@ -11,6 +11,7 @@ from norman.config import (
     REDDIT_HEADERS,
     REDDIT_SUBREDDITS,
     REDDIT_SEARCH_TERMS,
+    ERROR_TITLE_PATTERNS,
     SCORE_THRESHOLD,
 )
 
@@ -124,6 +125,20 @@ class RedditScout(BaseScout):
                 f"  · Event verification: {event_verified}/{event_total} "
                 f"leads passed ({pass_rate}% pass rate)"
             )
+
+        # Universal error-title filter applied once across all three collection
+        # modes (/new, search, event search) — drops scrape failures / auth
+        # walls that slipped through. See ERROR_TITLE_PATTERNS.
+        kept: list[Lead] = []
+        error_filtered = 0
+        for lead in leads:
+            if title_matches_error_pattern(lead.title, ERROR_TITLE_PATTERNS):
+                error_filtered += 1
+            else:
+                kept.append(lead)
+        leads = kept
+        if error_filtered:
+            notes.append(f"Reddit: filtered {error_filtered} error-titled leads (scrape failures)")
 
         return ScoutResult(source=self.source, leads=leads, errors=errors, notes=notes)
 
