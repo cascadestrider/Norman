@@ -42,12 +42,16 @@ SEGMENT_POSITIONING = {
         "tracking in flight and depth perception on approach, unlike generic "
         "polarized lenses. Color science that enhances green contrast without "
         "the unnatural pop. An alternative to the pink/purple 'golf lens' "
-        "trope that dominates the category."
+        "trope that dominates the category. Also tuned to keep rangefinder "
+        "and GPS-watch distance readouts legible, so you read your yardage "
+        "without flipping your sunglasses up and down every shot."
     ),
     "fishing": (
         "Fishing-tuned polarization optimized for spotting fish through "
         "water glare. Maximum glare cut where it matters, without the "
-        "color distortion that compromises other uses."
+        "color distortion that compromises other uses. Also tuned to keep "
+        "GPS chartplotters and fish-finder screens readable, so navigating "
+        "the water no longer means flipping your sunglasses up at the helm."
     ),
     "motorcycle": (
         "Rider-tuned polarization that works with modern motorcycle tech — "
@@ -60,7 +64,10 @@ SEGMENT_POSITIONING = {
         "taking sunglasses off at every stoplight to check the map. Also "
         "tuned for the rainbow patterns, dark blotches, and visual "
         "distortion that conventional polarized lenses produce against "
-        "tinted and laminated vehicle glass."
+        "tinted and laminated vehicle glass. The same screen-visibility "
+        "advantage applies equally to professional in-vehicle screen "
+        "contexts — MDT terminals, dispatch displays, and patient monitors "
+        "that go dark through conventional polarized lenses."
     ),
     "sensitivity": (
         "Designed for how your eyes actually work — color-accurate rather "

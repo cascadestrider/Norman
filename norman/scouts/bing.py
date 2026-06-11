@@ -28,11 +28,15 @@ BING_QUERIES = {
         "polarized sunglasses fishing glare site:forum OR site:reddit OR review",
         "fishing sunglasses eye strain water glare",
         "best polarized fishing sunglasses comparison",
+        # Phase 1.11 client-supplied pain: GPS/chartplotter screen visibility.
+        "fishing gps polarized lenses problems",
     ],
     "golf": [
         "golf sunglasses glare reduction review",
         "best sunglasses for golfing bright sun",
         "anti-glare sunglasses golfers forum",
+        # Phase 1.11 client-supplied pain: rangefinder/GPS distance reading.
+        "rangefinder polarized sunglasses golf",
     ],
     "motorcycle": [
         "motorcycle sunglasses UV glare protection review",
@@ -47,6 +51,9 @@ BING_QUERIES = {
         "anti-glare sunglasses outdoor activities",
         # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
         "polarized lenses window tint problems",
+        # Phase 1.11 client-supplied pain: police/EMT in-vehicle screens
+        # (temporary fold into commuter).
+        "emergency vehicle screens polarized sunglasses",
     ],
 }
 

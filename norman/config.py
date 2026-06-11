@@ -207,6 +207,13 @@ REDDIT_SEARCH_TERMS = [
     "polarized sunglasses fishing",
     "fishing sunglasses glare water",
 
+    # Phase 1.11 client-supplied pain: GPS/rangefinder/MDT screen visibility.
+    # Two further EMT and chartplotter phrasings held pending Reddit
+    # registered-API migration.
+    "garmin polarized sunglasses fishing",
+    "golf rangefinder polarized sunglasses",
+    "police polarized sunglasses screens",
+
     # Cross-cutting safety net
     "sunglasses recommendation",
     "best polarized sunglasses",
@@ -239,6 +246,8 @@ GOOGLE_QUERIES = {
         "best golf sunglasses 2025",
         "sunglasses for golf Reddit",
         "golf tournament sunglasses",
+        # Phase 1.11 client-supplied pain: rangefinder/GPS distance reading.
+        "golf rangefinder visibility polarized sunglasses",
     ],
 
     # Motorcycle — file 2 (screen visibility overlaps heavily with riders)
@@ -262,6 +271,9 @@ GOOGLE_QUERIES = {
         "polarized sunglasses GPS screen visibility",
         # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
         "polarized sunglasses tinted car windows distortion",
+        # Phase 1.11 client-supplied pain: police/EMT in-vehicle screens
+        # (temporary fold into commuter).
+        "police ambulance vehicle screens polarized sunglasses",
     ],
 
     # Sensitivity — file 3 (new segment)
@@ -289,6 +301,8 @@ GOOGLE_QUERIES = {
         "polarized sunglasses fishing glare water review",
         "polarized fishing sunglasses water glare comparison",
         "fishing sunglasses eye strain forum",
+        # Phase 1.11 client-supplied pain: GPS/chartplotter screen visibility.
+        "garmin gps fishing polarized sunglasses problem",
     ],
 
     # Cross-cutting safety-net queries that apply across multiple segments
@@ -312,6 +326,9 @@ YOUTUBE_QUERIES = {
         "polarized sunglasses golf test",
         "reading greens with sunglasses",
         "best golf sunglasses 2025",
+        # Phase 1.11 client-supplied pain: rangefinder/GPS distance reading.
+        "golf rangefinder polarized sunglasses",
+        "reading rangefinder with sunglasses",
     ],
     "motorcycle": [
         "motorcycle sunglasses HUD review",
@@ -324,6 +341,10 @@ YOUTUBE_QUERIES = {
         # Phase 1.8 client-supplied pain: polarized/tinted-window interaction.
         "polarized sunglasses window tint",
         "polarized rainbow windshield",
+        # Phase 1.11 client-supplied pain: police/EMT in-vehicle screen
+        # visibility, temporarily folded into the commuter bucket.
+        "police vehicle screens polarized",
+        "ambulance polarized lenses screens",
     ],
     "sensitivity": [
         "sunglasses headache review",
@@ -336,6 +357,9 @@ YOUTUBE_QUERIES = {
     "fishing": [
         "polarized sunglasses fishing review",
         "fishing sunglasses glare water",
+        # Phase 1.11 client-supplied pain: GPS/chartplotter screen visibility.
+        "polarized sunglasses fishing gps",
+        "garmin chartplotter polarized lenses",
     ],
 }
 
@@ -370,13 +394,24 @@ X_SEARCH_TERMS = [
 
     # Fishing — preserved across scouts; client input did not cover it
     "fishing glare sunglasses",
+
+    # Phase 1.11 client-supplied pain: GPS/rangefinder/MDT screen visibility.
+    # X-native short forms — brand/device + "polarized" lead. EMT term added
+    # here (cheaper per-query than Reddit) where the police term alone would
+    # under-cover the emergency-services voice.
+    "garmin polarized fishing",
+    "rangefinder polarized golf",
+    "police polarized screens",
+    "emt polarized sunglasses",
 ]
 
 X_MAX_RESULTS_PER_QUERY = 25
 X_LOOKBACK_HOURS = 48
 # Raised from 10 → 12 in Phase 1.8 to preserve fire-all semantics after the
 # tinted-window additions (commit c35ff91 deliberately moved X to fire-all).
-X_QUERIES_PER_RUN = 12
+# Raised 12 → 16 in Phase 1.11 for the same reason: the four GPS/rangefinder/
+# MDT additions keep fire-all intact at negligible cost (<$1/month estimated).
+X_QUERIES_PER_RUN = 16
 
 # --- LLM Token Pricing ($ per million tokens) ---
 MODEL_PRICING = {

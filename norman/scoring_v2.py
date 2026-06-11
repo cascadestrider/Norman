@@ -30,10 +30,13 @@ from norman.config import USE_SEMANTIC_SCORING, VOYAGE_API_KEY
 
 # First-person pain-point exemplars. Written to sound like real Reddit /
 # forum posters — not like the keyword table. Distribution across the five
-# active segments (golf 5, commuter 8, motorcycle 3, fishing 2, sensitivity 7).
+# active segments (golf 10, commuter 13, motorcycle 3, fishing 7, sensitivity 7).
 # Sensitivity gets the largest share because the file 3 pain is the most
 # emotionally loaded and underserved category per client input. Commuter
 # share grew in Phase 1.8 with the polarized/tinted-window pain addition.
+# Phase 1.11 added GPS/rangefinder/MDT screen-visibility pain: +5 golf
+# (rangefinder), +5 fishing (chartplotter — also lifts the long-underweighted
+# fishing segment from 2 to 7), +5 commuter (police/EMT fold, see note below).
 SEED_EXEMPLARS: list[str] = [
     # Golf — file 1 (5 exemplars)
     "took my sunglasses off on every tee shot because I literally can't track the ball with them on, this is absurd",
@@ -41,6 +44,13 @@ SEED_EXEMPLARS: list[str] = [
     "why does every 'golf' sunglass option out there look like something from a ladies boutique with the pink and purple lenses",
     "bought polarized sunglasses specifically for golf and now depth perception feels weird on approach shots, anyone else",
     "water hazards still blast glare right back at me through my polarized, what polarization percentage am I actually supposed to get",
+
+    # Golf — Phase 1.11 client pain: rangefinder / GPS distance reading (5 exemplars)
+    "constantly flipping my sunglasses up to read the rangefinder, by the back nine my eyes are exhausted from the back and forth",
+    "can't read the yardage on my rangefinder through polarized lenses, end up squinting around them which defeats the purpose",
+    "golf gps is invisible through polarized sunglasses, between the rangefinder and the gps watch I'm taking them off every other shot",
+    "no one warned me that polarized sunglasses make rangefinders unreadable, this is a known problem right",
+    "wearing polarized for the glare on water hazards but then I can't see my distance, the whole sunglasses situation in golf is broken",
 
     # Commuter / screen visibility — file 2 (3 exemplars)
     "can't see my phone screen at all with these polarized sunglasses on, have to take them off at every stoplight to check maps",
@@ -71,6 +81,44 @@ SEED_EXEMPLARS: list[str] = [
     "hate that I can't see clearly through my own tint with polarized sunglasses on, ruins every drive once the sun is out",
     "why do my tinted windows go dark and patchy the second I put my polarized lenses on, this can't just be me right",
 
+    # Commuter / police & EMT in-vehicle screens — Phase 1.11 client pain (5 exemplars).
+    # Temporary fold into commuter; see the carry-forward note below.
+    "officer here — can't read my MDT screen through polarized sunglasses during a stop, ends up being a safety thing more than a comfort thing",
+    "emt and the patient monitor in the back of the rig is completely black through polarized, I just stopped wearing sunglasses on shift altogether",
+    "patrol cop here — the in-car laptop and the windshield ticket scanner both fail through polarized lenses, I wish someone made glasses for this",
+    "paramedic running calls in bright sun all day and I can't wear sunglasses because every screen in the ambulance becomes invisible, brutal on the eyes",
+    "police MDT through polarized lenses looks like the screen is off, during an emergency I do not have time to flip my glasses up to read dispatch",
+    #
+    # Future work — police/EMT positioning question:
+    #   Phase 1.11 folded the police and EMT pain points into the commuter
+    #   segment as temporary holding, parallel to the Phase 1.8 vehicle/driving
+    #   segment carry-forward above. The embedding scorer recognizes the
+    #   screen-visibility pain and ranks this content commuter-adjacent, but
+    #   analyst.py's commuter SEGMENT_KEYWORDS set has no professional terms
+    #   (MDT, ambulance, patient monitor, dispatch, cruiser), so until the
+    #   (a) vs (b) decision below lands, police/EMT content will likely route
+    #   to segment="general" in production. Acceptable during Phase 1.11's
+    #   evidence-gathering posture — and itself informative for the strategic
+    #   conversation about whether to formalize a first-responder segment.
+    #
+    #   After 2-4 weeks of production data showing whether professional /
+    #   institutional screen-visibility content clusters as its own theme in
+    #   synthesis or stays entangled with consumer commuter signal, decide
+    #   between:
+    #     (a) Adding professional/institutional keywords (MDT, ambulance,
+    #         patient monitor, dispatch screen, etc.) to the commuter
+    #         classifier's segment-keyword set — small fix, keeps current
+    #         segment count.
+    #     (b) Creating a dedicated "professional" / "first-responder"
+    #         positioning segment — larger refactor with strategic
+    #         implications. Police and EMT are institutional buyers
+    #         (departmental procurement, possible certifications, possible
+    #         bulk orders) — a different go-to-market motion than individual
+    #         consumer purchases. Worth a Torque brand conversation before
+    #         committing to B2B positioning.
+    #   Client conversation about whether a B2B / first-responder segment is a
+    #   Torque strategic direction is on the calendar.
+
     # Motorcycle / screen visibility — file 2 (3 exemplars)
     "the heads up display on my helmet is completely gone when I put my polarized sunglasses on, makes the HUD useless",
     "riding with polarized sunglasses and my dashboard is pitch black, have to keep lifting them to check speed",
@@ -88,6 +136,14 @@ SEED_EXEMPLARS: list[str] = [
     # Fishing — preserved from prior SEED_EXEMPLARS (2 exemplars)
     "fishing all morning and the glare off the water made it impossible to see fish, what am I doing wrong with my lenses",
     "bought these supposedly polarized sunglasses and my eyes are still killing me after a day on the water, there's still glare everywhere",
+
+    # Fishing — Phase 1.11 client pain: GPS / chartplotter screen visibility (5 exemplars).
+    # Also lifts the long-underweighted fishing segment from 2 exemplars to 7.
+    "can't read my garmin chartplotter at all with these polarized sunglasses, have to flip them up every time I want to check the depth",
+    "polarized sunglasses are great for spotting fish but make my fish finder screen go completely black, drives me nuts",
+    "fishing all day means constantly taking my sunglasses off to look at the gps, defeats the whole point of wearing them",
+    "anyone else have to choose between seeing the water and seeing their navigation, polarized lenses kill the chartplotter screen",
+    "tried three different brands of polarized sunglasses and they all blackout my garmin, what am I supposed to do out there",
 ]
 
 
